@@ -1,26 +1,389 @@
 @import "tailwindcss";
 
+/* ── Themed design system (from "Poker with AI — UI Kit" / GameTableThemed) ──
+   Six theme schemas defined as semantic CSS variables; every Tailwind token and
+   component class below reads from them, so [data-theme] on <html> reskins the app. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* parlor (default) */
+  --t-bg: #0a0d09;
+  --t-panel: rgba(18, 24, 16, 0.9);
+  --t-line: #232b1e;
+  --t-tx: #e6ecdd;
+  --t-dim: #8d9a80;
+  --t-acc: #d8b25a;
+  --t-acc-ink: #241a08;
+  --t-felt: radial-gradient(120% 130% at 50% 20%, #2c4a37, #16261c);
+  --t-felt-bg: transparent;
+  --t-felt-edge: #0d150f;
+  --t-card: #f3efe2;
+  --t-card-ink: #1b1d1a;
+  --t-red: #b23b2f;
+  --t-chip: #d8b25a;
+  --t-rad: 12px;
+  --t-rad-sm: 8px;
+  --t-font: 'DM Sans', system-ui, sans-serif;
+  --t-disp: 'Instrument Serif', Georgia, serif;
+  --t-disp-w: 400;
+  --t-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.9);
+  --t-bubble: rgba(24, 32, 22, 0.95);
+  --t-bubble-ink: #dfe7d4;
+  --t-caps-ls: 0.18em;
+  --t-bw: 1px;
+  --t-table-r: 50%/38%;
+  --t-tilt: none;
 }
 
+[data-theme='pixel'] {
+  --t-bg: #1a1c2c;
+  --t-panel: #333c57;
+  --t-line: #566c86;
+  --t-tx: #f4f4f4;
+  --t-dim: #a7b6c6;
+  --t-acc: #f4b41b;
+  --t-acc-ink: #1a1c2c;
+  --t-felt: linear-gradient(#2b7a5c, #1e5b45);
+  --t-felt-edge: #0f2f24;
+  --t-card: #f4f4f4;
+  --t-card-ink: #1a1c2c;
+  --t-red: #e43b44;
+  --t-chip: #f4b41b;
+  --t-rad: 0px;
+  --t-rad-sm: 0px;
+  --t-font: 'Pixelify Sans', monospace;
+  --t-disp: 'Silkscreen', monospace;
+  --t-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+  --t-bubble: #f4f4f4;
+  --t-bubble-ink: #1a1c2c;
+  --t-caps-ls: 0.06em;
+  --t-bw: 3px;
+  --t-table-r: 0px;
+}
+
+[data-theme='flat'] {
+  --t-bg: #eceae4;
+  --t-panel: #eceae4;
+  --t-line: #cfccc3;
+  --t-tx: #1b1d1a;
+  --t-dim: #82857d;
+  --t-acc: #e0463a;
+  --t-acc-ink: #fff;
+  --t-felt: none;
+  --t-felt-edge: #cfccc3;
+  --t-card: #eceae4;
+  --t-card-ink: #1b1d1a;
+  --t-red: #e0463a;
+  --t-chip: #1b1d1a;
+  --t-rad: 3px;
+  --t-rad-sm: 3px;
+  --t-font: 'Space Grotesk', system-ui, sans-serif;
+  --t-disp: 'Space Grotesk', system-ui, sans-serif;
+  --t-shadow: none;
+  --t-bubble: #1b1d1a;
+  --t-bubble-ink: #eceae4;
+  --t-caps-ls: 0.14em;
+}
+
+[data-theme='paper'] {
+  --t-bg: #f4f0e6;
+  --t-panel: #faf7ef;
+  --t-line: #d8d0bd;
+  --t-tx: #2b2a26;
+  --t-dim: #8b8574;
+  --t-acc: #8a2f24;
+  --t-acc-ink: #faf7ef;
+  --t-felt: none;
+  --t-felt-edge: #c9c0aa;
+  --t-card: #fffdf7;
+  --t-card-ink: #2b2a26;
+  --t-red: #8a2f24;
+  --t-chip: #8a2f24;
+  --t-rad: 2px;
+  --t-rad-sm: 2px;
+  --t-font: 'EB Garamond', Georgia, serif;
+  --t-disp: 'EB Garamond', Georgia, serif;
+  --t-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  --t-bubble: #efe9da;
+  --t-bubble-ink: #2b2a26;
+  --t-caps-ls: 0.2em;
+}
+
+[data-theme='terminal'] {
+  --t-bg: #0b0d0b;
+  --t-panel: #111411;
+  --t-line: #2b332b;
+  --t-tx: #d8e0d8;
+  --t-dim: #6f7c6f;
+  --t-acc: #33ff66;
+  --t-acc-ink: #04140a;
+  --t-felt: none;
+  --t-felt-edge: #2b332b;
+  --t-card: #0b0d0b;
+  --t-card-ink: #d8e0d8;
+  --t-red: #ff5f56;
+  --t-chip: #33ff66;
+  --t-rad: 0px;
+  --t-rad-sm: 0px;
+  --t-font: 'JetBrains Mono', monospace;
+  --t-disp: 'JetBrains Mono', monospace;
+  --t-shadow: none;
+  --t-bubble: #111411;
+  --t-bubble-ink: #d8e0d8;
+  --t-caps-ls: 0.12em;
+  --t-table-r: 0px;
+}
+
+[data-theme='sketch'] {
+  --t-bg: #fdfbf4;
+  --t-panel: #fffdf8;
+  --t-line: #3a352c;
+  --t-tx: #22201c;
+  --t-dim: #7d766a;
+  --t-acc: #2f6fb0;
+  --t-acc-ink: #fffdf8;
+  --t-felt: none;
+  --t-felt-bg: #e7f0dd;
+  --t-felt-edge: #3a352c;
+  --t-card: #fffdf8;
+  --t-card-ink: #22201c;
+  --t-red: #c5453a;
+  --t-chip: #e0a02a;
+  --t-rad: 14px 7px 12px 8px;
+  --t-rad-sm: 9px 5px 8px 6px;
+  --t-font: 'Kalam', cursive;
+  --t-disp: 'Caveat', cursive;
+  --t-disp-w: 700;
+  --t-shadow: 2px 3px 0 rgba(34, 32, 28, 0.12);
+  --t-bubble: #fffdf8;
+  --t-bubble-ink: #22201c;
+  --t-caps-ls: 0.08em;
+  --t-bw: 2.5px;
+  --t-table-r: 60% 55% 58% 62%/48% 52% 47% 53%;
+  --t-tilt: rotate(-1deg);
+}
+
+/* Tailwind tokens remap onto the theme vars — existing utility classes reskin automatically */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-sans: var(--t-font);
+  --font-serif: var(--t-disp);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ink: var(--t-bg);
+  --color-panel: var(--t-panel);
+  --color-panel-deep: var(--t-bg);
+  --color-panel-dark: var(--t-bg);
+  --color-line: var(--t-line);
+  --color-line-soft: var(--t-line);
+  --color-line-strong: var(--t-line);
+  --color-gold: var(--t-acc);
+  --color-gold-deep: var(--t-acc);
+  --color-gold-dark: var(--t-acc);
+  --color-gold-pale: var(--t-acc);
+  --color-parchment: var(--t-tx);
+  --color-cream: var(--t-tx);
+  --color-body: var(--t-tx);
+  --color-sage: var(--t-dim);
+  --color-sage-dim: var(--t-dim);
+  --color-olive: var(--t-dim);
+  --color-moss: var(--t-panel);
+  --color-moss-line: var(--t-line);
+  --color-moss-bubble: var(--t-bubble);
+  --color-win: var(--t-acc);
+  --color-loss: var(--t-red);
+  --color-card-red: var(--t-red);
+  --color-card-black: var(--t-card-ink);
+  --color-felt: var(--t-felt-edge);
+  --color-felt-hi: var(--t-felt-edge);
+  --color-felt-lo: var(--t-felt-edge);
+  --color-wood: var(--t-felt-edge);
+  --color-wood-ring: var(--t-felt-edge);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--t-bg);
+  color: var(--t-tx);
+  font-family: var(--t-font);
+}
+
+.font-serif {
+  font-weight: var(--t-disp-w);
+}
+
+.bg-page {
+  background: var(--t-bg);
+}
+
+/* themed radii + tilt helpers */
+.r-md { border-radius: var(--t-rad); }
+.r-sm { border-radius: var(--t-rad-sm); }
+.tilt { transform: var(--t-tilt); }
+.shadow-theme { box-shadow: var(--t-shadow); }
+
+/* small uppercase label */
+.label-caps {
+  font-size: 11px;
+  letter-spacing: var(--t-caps-ls);
+  text-transform: uppercase;
+  color: var(--t-dim);
+}
+
+/* accent call-to-action (Raise, Host a table) */
+.btn-gold {
+  border: 1px solid var(--t-acc);
+  background: var(--t-acc);
+  color: var(--t-acc-ink);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: var(--t-rad-sm);
+  cursor: pointer;
+}
+.btn-gold:hover { filter: brightness(1.08); }
+.btn-gold:disabled { filter: none; opacity: 0.5; cursor: default; }
+
+/* strong outline (Call/Check) */
+.btn-moss {
+  border: 1px solid var(--t-tx);
+  background: none;
+  color: var(--t-tx);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: var(--t-rad-sm);
+  cursor: pointer;
+}
+.btn-moss:hover { background: var(--t-panel); }
+.btn-moss:disabled { opacity: 0.5; cursor: default; }
+
+/* quiet outline (Fold/Cancel) */
+.btn-dark {
+  border: 1px solid var(--t-line);
+  background: none;
+  color: var(--t-dim);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: var(--t-rad-sm);
+  cursor: pointer;
+}
+.btn-dark:hover { color: var(--t-tx); }
+.btn-dark:disabled { opacity: 0.5; cursor: default; }
+
+/* selection pill / chip */
+.pill {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--t-rad-sm);
+  border: 1px solid var(--t-line);
+  background: none;
+  color: var(--t-dim);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pill:hover { border-color: var(--t-acc); color: var(--t-tx); }
+.pill-on {
+  background: var(--t-acc);
+  border-color: var(--t-acc);
+  color: var(--t-acc-ink);
+}
+
+/* playing card — rank + suit top-left, themed stock */
+.card-face {
+  border-radius: var(--t-rad-sm);
+  background: var(--t-card);
+  color: var(--t-card-ink);
+  border: var(--t-bw) solid var(--t-felt-edge);
+  padding: 6px;
+  font-family: var(--t-disp);
+  font-weight: var(--t-disp-w);
+  line-height: 1.1;
+  box-shadow: var(--t-shadow);
+  animation: dealIn 0.35s ease both;
+}
+.card-face-red { color: var(--t-red); }
+.card-back {
+  border-radius: var(--t-rad-sm);
+  background: repeating-linear-gradient(45deg, var(--t-panel) 0 6px, var(--t-line) 6px 12px);
+  border: var(--t-bw) solid var(--t-felt-edge);
+  box-shadow: var(--t-shadow);
+}
+
+/* the table surface */
+.table-felt {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.62;
+  border-radius: var(--t-table-r);
+  background-image: var(--t-felt);
+  background-color: var(--t-felt-bg);
+  border: var(--t-bw) solid var(--t-felt-edge);
+}
+
+/* seat plate */
+.seat-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  border-radius: var(--t-rad);
+  background: var(--t-panel);
+  border: var(--t-bw) solid var(--t-line);
+  box-shadow: var(--t-shadow);
+  min-width: 132px;
+  white-space: nowrap;
+  transform: var(--t-tilt);
+}
+.seat-pill-active {
+  outline: 2px solid var(--t-acc);
+  outline-offset: 3px;
+  animation: seatPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dealIn {
+  from { transform: translateY(-14px) rotate(-6deg); opacity: 0; }
+  to { transform: translateY(0) rotate(0); opacity: 1; }
+}
+@keyframes msgIn {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.msg-in { animation: msgIn 0.25s ease both; }
+
+@keyframes bubblePop {
+  from { opacity: 0; transform: translate(-50%, -6px) scale(0.94); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.bubble-pop { animation: bubblePop 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.row-in { animation: rowIn 0.3s ease both; }
+
+@keyframes potPulse {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(1.12); }
+}
+.pot-pulse { animation: potPulse 0.52s ease-out; }
+
+@keyframes chipPop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.45); }
+  55% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.chip-pop { animation: chipPop 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+
+@keyframes seatPulse {
+  0%, 100% { outline-color: transparent; }
+  50% { outline-color: var(--t-acc); }
+}
+
+.chip-coin {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--t-chip);
+  border: 1px solid var(--t-felt-edge);
+  pointer-events: none;
+  z-index: 40;
 }
