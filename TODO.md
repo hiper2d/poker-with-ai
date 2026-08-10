@@ -57,7 +57,8 @@ What follows is ordered roughly by value.
 
 ## 5. Infra / housekeeping
 
-- [ ] **Commit the repo** — everything since the scaffold is uncommitted; set up remote.
+- [x] **Commit the repo** (done) — pushed to github.com/hiper2d/poker-with-ai with
+      README + screenshots; `.env` and local tool state ignored, `.env.example` committed.
 - [ ] **Re-sync the UI kit to Claude Design before the next design session** — components
       + stylesheet changed (themes); also rewrite `.design-sync/conventions.md` for the
       semantic token vocabulary (`--t-*`, `r-md`/`r-sm`, theming rules).
