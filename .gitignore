@@ -44,3 +44,13 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# ide / local tool state
+.idea/
+.claude/settings.local.json
+
+# design-sync generated output (durable config/notes/previews ARE committed)
+.design-sync/dist/
+
+# keep the env template
+!.env.example

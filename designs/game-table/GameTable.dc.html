@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Game Table" description="Full-screen poker table: live seat chatter, chip animations, last-event banner and collapsible log." -->
+<helmet><script src="./ds-base.js"></script><style>html,body{margin:0;height:100%;overflow:hidden;background:#0a0d09}@keyframes bubblePop{from{opacity:0;transform:translate(-50%,-6px) scale(.94)}to{opacity:1;transform:translate(-50%,0) scale(1)}}@keyframes rowIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@keyframes seatPulse{0%,100%{box-shadow:0 0 0 0 rgba(216,178,90,0)}50%{box-shadow:0 0 0 6px rgba(216,178,90,.16)}}</style></helmet>
+<div class="bg-page" style="height:100vh;width:100%;display:grid;grid-template-columns:1fr auto;overflow:hidden;font-family:var(--font-dm-sans),system-ui,sans-serif;color:#cfd8c4">
+<div style="display:flex;flex-direction:column;min-width:0;overflow:hidden">
+<div style="display:flex;align-items:center;gap:18px;padding:14px 26px;border-bottom:1px solid #232b1e;flex:none">
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:22px;color:#ece5d3;letter-spacing:.01em">Parlor</div>
+<div style="width:1px;height:18px;background:#2a3325"></div>
+<div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#94a68f;letter-spacing:.08em;text-transform:uppercase">
+<span>Hand {{ handNo }}</span><span style="color:#3f4a35">/</span><span>Blinds 100 · 200</span><span style="color:#3f4a35">/</span><span style="color:#d8b25a">{{ stageLabel }}</span></div>
+<div style="flex:1"></div>
+<div style="display:flex;gap:8px;align-items:center">
+<x-import component-from-global-scope="PokerUI.Pill" onClick="{{ toggleRun }}" selected="{{ running }}" hint-size="92px,40px">{{ runLabel }}</x-import>
+<x-import component-from-global-scope="PokerUI.Pill" onClick="{{ toggleLog }}" selected="{{ logOpen }}" hint-size="92px,40px">Event log</x-import></div></div>
+<div style="flex:none;padding:12px 26px 0">
+<div ref="{{ eventRef }}" style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-radius:16px;border:1px solid #3a4430;background:linear-gradient(90deg,rgba(31,59,46,.65),rgba(20,24,15,.4))">
+<span style="width:8px;height:8px;border-radius:999px;background:#d8b25a;flex:none;box-shadow:0 0 12px 2px rgba(216,178,90,.5)"></span>
+<div style="min-width:0;display:flex;flex-direction:column;gap:1px">
+<div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#7d8b6a">Last event</div>
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:24px;line-height:1.15;color:#ece5d3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lastEvent }}</div></div>
+<div style="flex:1"></div>
+<div style="font-size:11px;color:#7d8b6a;letter-spacing:.1em;flex:none">{{ lastEventTime }}</div></div></div>
+<div ref="{{ areaRef }}" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:44px 132px 20px">
+<div ref="{{ tableRef }}" style="{{ tableBoxStyle }}">
+<x-import component-from-global-scope="PokerUI.TableFelt" hint-size="100%,100%">
+<div style="text-align:center">
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.24em;color:#a9c0ac">Pot</div>
+<div ref="{{ potRef }}" style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:44px;line-height:1;color:#efe2c0;font-variant-numeric:tabular-nums">{{ potText }}</div></div>
+<div style="display:flex;gap:8px;min-height:76px;align-items:center">
+<sc-for list="{{ board }}" as="c" hint-placeholder-count="5">
+<x-import component-from-global-scope="PokerUI.PlayingCard" card="{{ c }}" hint-size="54px,76px"></x-import></sc-for></div></x-import>
+<sc-for list="{{ seats }}" as="s" hint-placeholder-count="6">
+<div style="{{ s.style }}">
+<x-import component-from-global-scope="PokerUI.SeatPill" name="{{ s.name }}" stack="{{ s.stack }}" avatar-color="{{ s.color }}" tag="{{ s.tag }}" last-action="{{ s.lastAction }}" active="{{ s.active }}" folded="{{ s.folded }}" dimmed="{{ s.dimmed }}" is-human="{{ s.isHuman }}" dealer="{{ s.dealer }}" hint-size="190px,58px"></x-import>
+<sc-if value="{{ s.msg }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);width:224px;z-index:35;animation:bubblePop .28s cubic-bezier(.2,.8,.3,1) both">
+<x-import component-from-global-scope="PokerUI.ChatBubble" author="{{ s.name }}" author-color="{{ s.color }}" hint-size="220px,52px">{{ s.msg }}</x-import></div></sc-if></div></sc-for></div></div>
+<div style="flex:none;display:flex;align-items:center;gap:14px;padding:0 26px 20px">
+<div style="display:flex;gap:8px;align-items:center">
+<span style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#7d8b6a">Your hand</span>
+<sc-for list="{{ heroCards }}" as="c" hint-placeholder-count="2">
+<x-import component-from-global-scope="PokerUI.PlayingCard" card="{{ c }}" hint-size="54px,76px"></x-import></sc-for></div>
+<div style="flex:1"></div>
+<div style="display:flex;gap:10px;align-items:center">
+<x-import component-from-global-scope="PokerUI.Button" variant="dark" size="lg" onClick="{{ heroFold }}" hint-size="110px,52px">Fold</x-import>
+<x-import component-from-global-scope="PokerUI.Button" variant="moss" size="lg" onClick="{{ heroCall }}" hint-size="150px,52px">{{ callLabel }}</x-import>
+<x-import component-from-global-scope="PokerUI.Button" variant="gold" size="lg" onClick="{{ heroRaise }}" hint-size="160px,52px">{{ raiseLabel }}</x-import></div></div></div>
+<div style="{{ railStyle }}">
+<sc-if value="{{ logOpen }}" hint-placeholder-val="{{ true }}">
+<div style="height:100%;display:flex;flex-direction:column;min-height:0">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;flex:none">
+<div style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#7d8b6a">Event log</div>
+<button onClick="{{ toggleLog }}" style="background:none;border:1px solid #2a3325;border-radius:999px;color:#94a68f;font-size:11px;padding:4px 10px;cursor:pointer" style-hover="border-color:#d8b25a;color:#ecd39a">Collapse ›</button></div>
+<div style="flex:1;min-height:0;overflow-y:auto;padding:0 18px 18px;display:flex;flex-direction:column;gap:2px">
+<sc-for list="{{ log }}" as="e" hint-placeholder-count="8">
+<div style="{{ e.rowStyle }}">
+<span style="font-size:10px;color:#5d6b4e;font-variant-numeric:tabular-nums;flex:none;padding-top:2px">{{ e.time }}</span>
+<span style="{{ e.textStyle }}">{{ e.text }}</span></div></sc-for></div></div></sc-if>
+<sc-if value="{{ logClosed }}" hint-placeholder-val="{{ false }}">
+<button onClick="{{ toggleLog }}" style="height:100%;width:100%;background:none;border:none;color:#94a68f;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:18px" style-hover="color:#ecd39a">
+<span style="font-size:14px">‹</span>
+<span style="writing-mode:vertical-rl;font-size:11px;letter-spacing:.2em;text-transform:uppercase">Event log</span>
+<span style="width:6px;height:6px;border-radius:999px;background:#d8b25a"></span></button></sc-if></div></div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;taunts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;autoplay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;speed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2400,&quot;min&quot;:1200,&quot;max&quot;:4000,&quot;step&quot;:200,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;logOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+const SEATS = [
+  { name: 'Riley', tag: '', color: '#d8b25a', stack: 12450, isHuman: true, left: 50, top: 100 },
+  { name: 'Nova', tag: 'Claude Sonnet', color: '#5c8f7b', stack: 18240, left: 1, top: 46 },
+  { name: 'Duke', tag: 'DeepSeek V4', color: '#8d6a3f', stack: 9400, left: 19, top: 2 },
+  { name: 'Kiko', tag: 'Grok 4.5', color: '#a35f6d', stack: 4200, left: 50, top: -6 },
+  { name: 'Vex', tag: 'GPT-5', color: '#6b7fa8', stack: 15100, left: 81, top: 2 },
+  { name: 'Halo', tag: 'Gemini 3', color: '#9a8bb0', stack: 7800, left: 99, top: 46 }
+];
+
+const SCRIPT = [
+  { i: 1, act: 'raise', amt: 600, msg: 'Your sizing tells me more than your face does.' },
+  { i: 2, act: 'fold' },
+  { i: 3, act: 'call', amt: 600, msg: 'I like round numbers.' },
+  { i: 4, act: 'fold', msg: 'Not tonight.' },
+  { i: 5, act: 'call', amt: 600 },
+  { i: 0, act: 'call', amt: 600 },
+  { stage: 'flop', board: ['Ah', 'Kd', '7c'] },
+  { i: 1, act: 'bet', amt: 900, msg: 'Ace-king board. Someone here is lying.' },
+  { i: 5, act: 'call', amt: 900, msg: 'Paying to see one more.' },
+  { i: 0, act: 'call', amt: 900 },
+  { stage: 'turn', board: ['Ah', 'Kd', '7c', '2s'] },
+  { i: 1, act: 'check', msg: 'Your turn to bleed.' },
+  { i: 5, act: 'bet', amt: 1800 },
+  { i: 0, act: 'fold' },
+  { i: 1, act: 'call', amt: 1800, msg: 'Curiosity is a tax I can afford.' },
+  { stage: 'river', board: ['Ah', 'Kd', '7c', '2s', 'Kh'] },
+  { i: 1, act: 'check' },
+  { i: 5, act: 'bet', amt: 3200, msg: 'All of it. Or none of it.' },
+  { i: 1, act: 'fold', msg: 'Well played. This time.' },
+  { stage: 'showdown', win: 5 }
+];
+
+const MSG_MS = 5200;
+const CHIP = { bet: '#d8b25a', raise: '#d8b25a', call: '#7fbf6a', check: '#94a68f', fold: '#8a6f66' };
+
+class Component extends DCLogic {
+  tableRef = React.createRef();
+  areaRef = React.createRef();
+  potRef = React.createRef();
+  eventRef = React.createRef();
+  timers = [];
+  state = {
+    idx: 0,
+    handNo: 41,
+    stage: 'preflop',
+    board: [],
+    pot: 300,
+    seats: SEATS.map(s => ({ ...s, lastAction: '', folded: false, active: false, dealer: false, msg: '' })),
+    log: [],
+    lastEvent: 'Blinds posted — 100 / 200',
+    lastEventTime: this.clock(),
+    running: this.props.autoplay ?? true,
+    logOpen: this.props.logOpen ?? true
+  };
+
+  clock() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  }
+
+  componentDidMount() {
+    this.state.seats[2].dealer = true;
+    this.measure();
+    this.ro = new ResizeObserver(this.measure);
+    if (this.areaRef.current) this.ro.observe(this.areaRef.current);
+    this.tick();
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); clearTimeout(this.loop); if (this.ro) this.ro.disconnect(); }
+
+  measure = () => {
+    const el = this.areaRef.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const h = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const tw = Math.max(320, Math.min(w, h * 1.62));
+    if (tw !== this.state.tableW) this.setState({ tableW: tw });
+  };
+
+  tick = () => {
+    clearTimeout(this.loop);
+    if (!this.state.running) return;
+    this.loop = setTimeout(() => { this.step(); this.tick(); }, this.props.speed ?? 2400);
+  };
+
+  pushEvent(text, kind) {
+    const time = this.clock();
+    this.setState(s => ({ lastEvent: text, lastEventTime: time, log: [{ text, kind, time }, ...s.log].slice(0, 60) }));
+    const el = this.eventRef.current;
+    if (el && el.animate) el.animate([{ transform: 'translateY(6px)', opacity: 0.35 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });
+  }
+
+  flyChips(seatIdx, amount, color) {
+    const host = this.tableRef.current;
+    if (!host) return;
+    const s = SEATS[seatIdx];
+    const chip = document.createElement('div');
+    chip.textContent = amount.toLocaleString();
+    Object.assign(chip.style, {
+      position: 'absolute', left: s.left + '%', top: s.top + '%', transform: 'translate(-50%,-50%) scale(.7)',
+      minWidth: '46px', padding: '5px 10px', borderRadius: '999px', textAlign: 'center',
+      background: 'rgba(12,16,11,.94)', border: '1px solid ' + color, color: color,
+      fontSize: '12px', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', zIndex: 40,
+      boxShadow: '0 8px 20px -8px rgba(0,0,0,.9)', pointerEvents: 'none', opacity: '0',
+      transition: 'all 720ms cubic-bezier(.3,.9,.25,1)'
+    });
+    host.appendChild(chip);
+    requestAnimationFrame(() => {
+      chip.style.opacity = '1';
+      chip.style.left = '50%';
+      chip.style.top = '44%';
+      chip.style.transform = 'translate(-50%,-50%) scale(1)';
+    });
+    const t1 = setTimeout(() => { chip.style.opacity = '0'; chip.style.transform = 'translate(-50%,-50%) scale(.6)'; }, 760);
+    const t2 = setTimeout(() => chip.remove(), 1100);
+    this.timers.push(t1, t2);
+    const pot = this.potRef.current;
+    const t3 = setTimeout(() => {
+      if (pot && pot.animate) pot.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.16)', color: '#ffe9b0' }, { transform: 'scale(1)' }], { duration: 520, easing: 'ease-out' });
+    }, 700);
+    this.timers.push(t3);
+  }
+
+  say(idx, msg) {
+    if (!(this.props.taunts ?? true) || !msg) return;
+    this.setState(s => ({ seats: s.seats.map((p, k) => k === idx ? { ...p, msg } : p) }));
+    const t = setTimeout(() => this.setState(s => ({ seats: s.seats.map((p, k) => k === idx && p.msg === msg ? { ...p, msg: '' } : p) })), MSG_MS);
+    this.timers.push(t);
+  }
+
+  step = () => {
+    const st = SCRIPT[this.state.idx];
+    const next = (this.state.idx + 1) % SCRIPT.length;
+
+    if (st.stage === 'showdown') {
+      const w = this.state.seats[st.win];
+      this.pushEvent(w.name + ' wins ' + this.state.pot.toLocaleString() + ' with kings full of sevens', 'win');
+      this.say(st.win, 'Told you. Patience is a strategy.');
+      const t = setTimeout(() => this.newHand(), 2200);
+      this.timers.push(t);
+      this.setState({ idx: next });
+      return;
+    }
+    if (st.stage) {
+      this.setState(s => ({ idx: next, stage: st.stage, board: st.board, seats: s.seats.map(p => ({ ...p, active: false, lastAction: p.folded ? p.lastAction : '' })) }));
+      this.pushEvent(st.stage[0].toUpperCase() + st.stage.slice(1) + ' — ' + st.board.join(' '), 'stage');
+      return;
+    }
+
+    const seat = this.state.seats[st.i];
+    const amt = st.amt || 0;
+    const label = st.act + (amt ? ' ' + amt.toLocaleString() : '');
+    this.setState(s => ({
+      idx: next,
+      pot: s.pot + amt,
+      seats: s.seats.map((p, k) => k === st.i
+        ? { ...p, stack: p.stack - amt, lastAction: label, folded: st.act === 'fold' ? true : p.folded, dimmed: st.act === 'fold' ? true : p.dimmed, active: true }
+        : { ...p, active: false })
+    }));
+    const verb = { raise: 'raises to', bet: 'bets', call: 'calls', check: 'checks', fold: 'folds' }[st.act];
+    this.pushEvent(seat.name + ' ' + verb + (amt ? ' ' + amt.toLocaleString() : ''), st.act);
+    if (amt) this.flyChips(st.i, amt, CHIP[st.act] || '#d8b25a');
+    this.say(st.i, st.msg);
+  };
+
+  newHand = () => {
+    this.setState(s => ({
+      idx: 0, handNo: s.handNo + 1, stage: 'preflop', board: [], pot: 300,
+      seats: s.seats.map((p, k) => ({ ...p, lastAction: '', folded: false, dimmed: false, active: false, msg: '', dealer: k === (s.seats.findIndex(x => x.dealer) + 1) % 6 }))
+    }));
+    this.pushEvent('New hand dealt — blinds 100 / 200', 'stage');
+  };
+
+  toggleRun = () => this.setState(s => ({ running: !s.running }), this.tick);
+  toggleLog = () => this.setState(s => ({ logOpen: !s.logOpen }));
+
+  heroAct = (act, amt) => {
+    const label = act + (amt ? ' ' + amt.toLocaleString() : '');
+    this.setState(s => ({
+      pot: s.pot + (amt || 0),
+      seats: s.seats.map((p, k) => k === 0 ? { ...p, stack: p.stack - (amt || 0), lastAction: label, folded: act === 'fold', dimmed: act === 'fold', active: false } : p)
+    }));
+    this.pushEvent('You ' + ({ fold: 'fold', call: 'call', raise: 'raise to' }[act]) + (amt ? ' ' + amt.toLocaleString() : ''), act);
+    if (amt) this.flyChips(0, amt, CHIP[act] || '#d8b25a');
+  };
+
+  renderVals() {
+    const s = this.state;
+    const k = Math.max(0.7, Math.min(1, (s.tableW || 900) / 880));
+    const seats = s.seats.map(p => ({
+      ...p,
+      style: { position: 'absolute', left: p.left + '%', top: p.top + '%', transform: 'translate(-50%,-50%) scale(' + k.toFixed(3) + ')', zIndex: p.msg ? 30 : 20 }
+    }));
+    const kindColor = { win: '#ecd39a', stage: '#d8b25a', fold: '#8a6f66' };
+    return {
+      areaRef: this.areaRef,
+      tableBoxStyle: { position: 'relative', width: s.tableW || 900, height: (s.tableW || 900) / 1.62 },
+      seats,
+      board: s.board,
+      heroCards: ['Qs', 'Qd'],
+      potText: s.pot.toLocaleString(),
+      stageLabel: s.stage,
+      handNo: '#' + s.handNo,
+      lastEvent: s.lastEvent,
+      lastEventTime: s.lastEventTime,
+      running: s.running,
+      runLabel: s.running ? 'Pause' : 'Play',
+      logOpen: s.logOpen,
+      logClosed: !s.logOpen,
+      railStyle: {
+        flex: 'none', width: s.logOpen ? 320 : 52, borderLeft: '1px solid #232b1e',
+        background: 'rgba(10,13,9,.72)', overflow: 'hidden',
+        transition: 'width .32s cubic-bezier(.3,.9,.25,1)'
+      },
+      log: s.log.map((e, i) => ({
+        ...e,
+        rowStyle: { display: 'flex', gap: 10, padding: '7px 0', borderBottom: '1px solid #1b2117', opacity: i === 0 ? 1 : Math.max(0.42, 1 - i * 0.055), animation: i === 0 ? 'rowIn .3s ease both' : 'none' },
+        textStyle: { lineHeight: 1.35, color: kindColor[e.kind] || '#cfd8c4', fontFamily: e.kind === 'win' ? 'var(--font-instrument-serif),Georgia,serif' : 'inherit', fontSize: e.kind === 'win' ? 16 : 13 }
+      })),
+      callLabel: 'Call 900',
+      raiseLabel: 'Raise 2,700',
+      toggleLog: this.toggleLog,
+      toggleRun: this.toggleRun,
+      heroFold: () => this.heroAct('fold'),
+      heroCall: () => this.heroAct('call', 900),
+      heroRaise: () => this.heroAct('raise', 2700),
+      tableRef: this.tableRef,
+      potRef: this.potRef,
+      eventRef: this.eventRef
+    };
+  }
+}
+
+</script>
+</body>
+</html>

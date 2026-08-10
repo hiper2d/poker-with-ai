@@ -1,0 +1,26 @@
+{
+  "projectId": "5b5c24eb-c345-4c1b-80da-1fe29b448570",
+  "shape": "package",
+  "pkg": "poker-with-ai",
+  "globalName": "PokerUI",
+  "srcDir": "components/ui",
+  "tsconfig": "./tsconfig.json",
+  "cssEntry": ".design-sync/dist/parlor.css",
+  "runtimeFontPrefixes": ["DM Sans", "Instrument Serif"],
+  "readmeHeader": ".design-sync/conventions.md",
+  "buildCmd": "npx @tailwindcss/cli -i app/globals.css -o .design-sync/dist/tailwind-out.css",
+  "overrides": {
+    "TableFelt": { "cardMode": "column" }
+  },
+  "componentSrcMap": {
+    "Avatar": "components/ui/Avatar.tsx",
+    "Button": "components/ui/Button.tsx",
+    "CapsLabel": "components/ui/CapsLabel.tsx",
+    "ChatBubble": "components/ui/ChatBubble.tsx",
+    "Panel": "components/ui/Panel.tsx",
+    "Pill": "components/ui/Pill.tsx",
+    "PlayingCard": "components/ui/PlayingCard.tsx",
+    "SeatPill": "components/ui/SeatPill.tsx",
+    "TableFelt": "components/ui/TableFelt.tsx"
+  }
+}
