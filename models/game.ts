@@ -24,13 +24,18 @@ export interface GameEvent {
   kind: GameEventKind;
 }
 
-export type ChatTrigger = 'router' | 'manual' | 'mention';
+export type ChatTrigger =
+  | 'router' // the Pit Boss picked this speaker
+  | 'manual' // the human picked this speaker directly
+  | 'reaction'; // the Pit Boss routed a reply to a bot's table talk
 
 /** Chat events run on their own queue + pump and never block the game queue. */
 export interface ChatEvent {
   actor: string;
   kind: 'CHAT_REPLY' | 'WELCOME_INTRO';
   trigger?: ChatTrigger;
+  /** What this reply answers — lets the prompt say "answer Vex", not just "say something". */
+  cause?: { author: string; text: string };
 }
 
 // ---- Players ----
@@ -80,6 +85,13 @@ export interface HandRecord {
 
 export const RECIPIENT_ALL = 'ALL';
 
+/**
+ * The chat router's identity: the floor supervisor who decides who gets a turn to talk.
+ * Distinct from the dealer voice ('GM') that narrates hands, and from the dealer BUTTON
+ * the engine rotates.
+ */
+export const PIT_BOSS = 'Pit Boss';
+
 export type MessageType =
   | 'GM_COMMAND'
   | 'GAME_STORY'
@@ -106,10 +118,64 @@ export interface GameMessage {
 
 // ---- The game doc ----
 
+/**
+ * The two independent lanes of work. Each has its own pump, its own queue, and its own
+ * error slot: a bot failing to speak must not stop the cards, and a failed betting
+ * decision must not silence the table.
+ */
+export type Lane = 'game' | 'chat';
+
+/** Why the Pit Boss is being asked to route: what just happened that might draw replies. */
+export type RoutingCauseKind = 'human' | 'reaction' | 'nudge';
+
+export interface RoutingCause {
+  kind: RoutingCauseKind;
+  /** Who spoke, for 'human' and 'reaction'. */
+  author?: string;
+  text?: string;
+}
+
+/**
+ * A failed step, kept on its lane until a retry succeeds. It stops that lane's pump, drives
+ * the lane's error banner, and rides back into the next attempt's prompt (`retryNote`) so
+ * the model is told what went wrong instead of blindly repeating the same call.
+ */
 export interface GameErrorState {
+  /** Shown to the player, in plain language. */
   message: string;
+  /** Technical cause — surfaced in the prompt on retry and in logs, not in the banner. */
+  details: string;
   failedAction: string;
+  /** Whose call failed: a bot name, or PIT_BOSS. */
+  actor?: string;
+  /** The model that failed, for the banner and for offering a different one. */
+  model?: string;
+  /**
+   * Whether there is still a pending step to replay. False when the failure left nothing
+   * queued — a routing call decides *who* speaks, so when it fails there is no bot to try
+   * again. The player recovers by saying something else or nudging the table instead, and
+   * the banner offers no Retry.
+   */
+  retryable: boolean;
   timestamp: number;
+}
+
+/**
+ * What Retry leaves behind for the next attempt. Set when the player clears a lane's
+ * error, consumed by the next call in that lane: the hint is appended to the prompt so the
+ * model is told why the last attempt failed, and `model` (from "Retry with another model")
+ * substitutes for exactly one call without changing the character's real model.
+ */
+export interface RetryPlan {
+  /** Whose call failed — the hint and model apply to this player only. */
+  actor: string;
+  /**
+   * Why the previous attempt failed. Only set for response-format failures — a timeout or 5xx
+   * has nothing to tell the model — and never together with `model`: a different model has not
+   * made the mistake being described.
+   */
+  hint?: string;
+  model?: string;
 }
 
 export interface Game {
@@ -131,7 +197,11 @@ export interface Game {
   messageCounter: number;
   handHistory: HandRecord[];
   gameMasterAiType: string;
-  errorState?: GameErrorState | null;
+  /** Per-lane retry state. A set error stops that lane's pump until the player retries. */
+  gameError?: GameErrorState | null;
+  chatError?: GameErrorState | null;
+  gameRetry?: RetryPlan | null;
+  chatRetry?: RetryPlan | null;
   createdAt: number;
   expireAt: number; // sliding TTL
 }

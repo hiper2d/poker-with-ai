@@ -16,11 +16,27 @@ What follows is ordered roughly by value.
       state between hands; COMPACTION messages show in the events feed; scheduling
       logic is pure (`lib/game/compaction.ts`) and tested. Summaries are stripped from
       the client payload (private reads).
-- [ ] **Port the GM chat router** from werewolf (`bot-selection.ts`): LLM picks responders
-      with quiet-bot pressure + hidden reasoning message. Currently mention-detection +
-      random 1-2 (marked TODO in `sendChatMessage`).
-- [ ] **Retry with a different model** when a bot call fails mid-hand (werewolf's one-shot
-      `modelOverride` pattern) instead of a plain Retry of the same model.
+- [x] **Chat router — the Pit Boss** (done): LLM picks who speaks next, on the GM model,
+      with quiet-bot pressure (activity derived from the message log, no stored counter)
+      and a `GM_ROUTER_SELECTION` trace message in the events feed. Four triggers: human
+      message, "Nudge table", manual mic-pass to one character, and a bot's own table talk
+      (`shouldRouteReaction` gates that one to a quiet table with budget left; picking
+      nobody is the expected answer). Model answers are clamped against the live table
+      (`clampSpeakers`). Bot chat replies are capped per hand and per game
+      (`GAME_CONFIG.chatBudget`, tighter on the free tier); at zero the router isn't
+      called either. All rules are pure + tested in `lib/game/chat-router.ts`; the call
+      lives in `lib/ai/pit-boss.ts`.
+- [x] **Per-lane failure + retry** (done, werewolf's flow): identical to werewolf except
+      that the two independent loops get their own error slots — `gameError`/`chatError`
+      plus `gameRetry`/`chatRetry` on the game doc, accessors in `lib/game/retry.ts`.
+      Every model call is tagged with `AiCallError` (`lib/ai/errors.ts`); a failure records
+      who/which model/why and **stops that lane** (the pump no-ops server-side, so a stray
+      tick or second tab can't re-fire it) with no fallback anywhere. As in werewolf,
+      clearing the error IS the retry: `retryLane` swaps it for a one-shot `RetryPlan` and
+      the pump re-runs whatever step is still pending — the queue head is untouched, so the
+      bot that failed speaks again. The plan carries the failure hint (appended to the
+      prompt via `retryNote`) and optionally a tier-validated one-shot model. Pure parts
+      tested in `lib/game/retry.test.ts`.
 
 ## 2. Money & models
 

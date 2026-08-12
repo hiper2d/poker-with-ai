@@ -1,5 +1,6 @@
 import type { ApiKeyMap } from '@/config/models';
 import { createAgent } from '@/lib/ai/agent-factory';
+import { aiCall } from '@/lib/ai/errors';
 import {
   buildBotSystemPrompt,
   buildChatCompactionPrompt,
@@ -13,6 +14,7 @@ import type { LegalActions } from '@/lib/engine/betting';
 import { legalActions } from '@/lib/engine/betting';
 import type { BettingAction } from '@/lib/engine/types';
 import { messageCounterOf, unsummarizedChat } from '@/lib/game/compaction';
+import { effectiveModel, retryNote } from '@/lib/game/retry';
 import { logger } from '@/lib/logging/logger';
 import type { Bot, Game, GameMessage } from '@/models/game';
 import { BettingDecisionSchema, CompactionSchema, type BettingDecision } from './types';
@@ -39,14 +41,19 @@ export async function decideBotAction(
   // Chat before the bot's watermark lives on in its summaries — don't feed it twice.
   const freshChat = recentChat.filter((m) => messageCounterOf(m) > bot.chatWatermark);
 
-  const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), bot.aiType, apiKeys);
-  const reply = await agent.askWithSchema(BettingDecisionSchema, [
-    {
-      role: 'user',
-      content:
-        buildDecisionPrompt(game, hand, bot.name, legal, freshChat) + buildReminderPostfix(bot),
-    },
-  ]);
+  const model = effectiveModel(game, bot.name, bot.aiType, 'game');
+  const reply = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+    return agent.askWithSchema(BettingDecisionSchema, [
+      {
+        role: 'user',
+        content:
+          buildDecisionPrompt(game, hand, bot.name, legal, freshChat) +
+          buildReminderPostfix(bot) +
+          retryNote(game.gameRetry, bot.name),
+      },
+    ]);
+  });
 
   const action = coerce(reply.content, bot.name, legal);
   return {
@@ -59,8 +66,13 @@ export async function decideBotAction(
 
 /** In-character one-liner when the game opens. */
 export async function botIntro(game: Game, bot: Bot, apiKeys: ApiKeyMap): Promise<string> {
-  const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), bot.aiType, apiKeys);
-  const reply = await agent.askText([{ role: 'user', content: buildIntroPrompt() }]);
+  const model = effectiveModel(game, bot.name, bot.aiType, 'chat');
+  const reply = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+    return agent.askText([
+      { role: 'user', content: buildIntroPrompt() + retryNote(game.chatRetry, bot.name) },
+    ]);
+  });
   return reply.content.trim();
 }
 
@@ -70,13 +82,23 @@ export async function botChatReply(
   bot: Bot,
   recentChat: GameMessage[],
   apiKeys: ApiKeyMap,
+  cause?: { author: string; text: string },
 ): Promise<string> {
   // Compacted-away chat lives in the summaries riding in the system prompt.
   const freshChat = recentChat.filter((m) => messageCounterOf(m) > bot.chatWatermark);
-  const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), bot.aiType, apiKeys);
-  const reply = await agent.askText([
-    { role: 'user', content: buildChatReplyPrompt(freshChat) + buildReminderPostfix(bot) },
-  ]);
+  const model = effectiveModel(game, bot.name, bot.aiType, 'chat');
+  const reply = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+    return agent.askText([
+      {
+        role: 'user',
+        content:
+          buildChatReplyPrompt(freshChat, cause) +
+          buildReminderPostfix(bot) +
+          retryNote(game.chatRetry, bot.name),
+      },
+    ]);
+  });
   return reply.content.trim();
 }
 
@@ -105,10 +127,16 @@ export async function compactBotChat(
   apiKeys: ApiKeyMap,
 ): Promise<ChatCompactionResult> {
   const pending = unsummarizedChat(messages, bot.chatWatermark);
-  const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), bot.aiType, apiKeys);
-  const reply = await agent.askWithSchema(CompactionSchema, [
-    { role: 'user', content: buildChatCompactionPrompt(game, bot, pending) },
-  ]);
+  const model = effectiveModel(game, bot.name, bot.aiType, 'game');
+  const reply = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+    return agent.askWithSchema(CompactionSchema, [
+      {
+        role: 'user',
+        content: buildChatCompactionPrompt(game, bot, pending) + retryNote(game.gameRetry, bot.name),
+      },
+    ]);
+  });
   const watermark = pending.reduce((max, m) => Math.max(max, messageCounterOf(m)), bot.chatWatermark);
   return { entry: formatCompaction(game.handNumber, reply.content), watermark };
 }
@@ -119,10 +147,16 @@ export async function compactBotContext(
   bot: Bot,
   apiKeys: ApiKeyMap,
 ): Promise<string> {
-  const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), bot.aiType, apiKeys);
-  const reply = await agent.askWithSchema(CompactionSchema, [
-    { role: 'user', content: buildContextCompactionPrompt(bot) },
-  ]);
+  const model = effectiveModel(game, bot.name, bot.aiType, 'game');
+  const reply = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+    return agent.askWithSchema(CompactionSchema, [
+      {
+        role: 'user',
+        content: buildContextCompactionPrompt(bot) + retryNote(game.gameRetry, bot.name),
+      },
+    ]);
+  });
   return formatCompaction(game.handNumber, reply.content);
 }
 

@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { logger } from '@/lib/logging/logger';
 import { AbstractAgent } from './abstract-agent';
+import { parseAndValidateLlmJson } from './json-response-parser';
 import type { AgentReply, AiMessage, TokenUsage } from './types';
 
 export class OpenAiAgent extends AbstractAgent {
@@ -61,11 +63,15 @@ export class OpenAiAgent extends AbstractAgent {
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) throw new Error('OpenAI returned empty content');
-    return { content: schema.parse(JSON.parse(raw)), usage: toUsage(response.usage) };
+    // Lenient even in native json_schema mode: it costs nothing on clean replies, and the
+    // json_object vendors (DeepSeek, Qwen, GLM, ...) routinely fence or narrate around the JSON.
+    const log = logger.with({ bot: this.botName, model: this.modelApiName });
+    const content = parseAndValidateLlmJson(raw, schema, (m) => log.info(m));
+    return { content, usage: toUsage(response.usage) };
   }
 }
 
-function toUsage(usage?: OpenAI.CompletionUsage): TokenUsage | undefined {
+export function toUsage(usage?: OpenAI.CompletionUsage): TokenUsage | undefined {
   if (!usage) return undefined;
   return {
     inputTokens: usage.prompt_tokens,

@@ -128,16 +128,24 @@ ${legal.actions.join(', ')}${legal.callAmount ? ` — ${legal.callAmount} to cal
 Decide.`;
 }
 
-export function buildChatReplyPrompt(recentChat: GameMessage[]): string {
+export function buildChatReplyPrompt(
+  recentChat: GameMessage[],
+  cause?: { author: string; text: string },
+): string {
   const chat = recentChat
     .slice(-15)
     .map((m) => `${m.authorName}: ${typeof m.msg === 'string' ? m.msg : ''}`)
     .filter((l) => !l.endsWith(': '))
     .join('\n');
+  const prompt = cause
+    ? `You are answering ${cause.author}, who just said: "${cause.text}"`
+    : `The table has gone quiet. Say something that keeps the conversation alive.`;
   return `## Recent table talk
 ${chat || '(quiet table)'}
 
-Reply to the conversation in character — 1-3 sentences, spoken aloud. If someone addressed you directly, answer them. Never reveal your actual hole cards honestly unless it serves you.`;
+${prompt}
+
+Reply in character — 1-3 sentences, spoken aloud. Never reveal your actual hole cards honestly unless it serves you.`;
 }
 
 export function buildIntroPrompt(): string {

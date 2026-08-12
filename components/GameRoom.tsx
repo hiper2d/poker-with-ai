@@ -1,17 +1,33 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { advanceChat, advanceGame, humanAction, sendChatMessage } from '@/app/actions/play-actions';
+import {
+  advanceChat,
+  advanceGame,
+  continueChat,
+  humanAction,
+  retryLane,
+  selectChatSpeakers,
+  sendChatMessage,
+} from '@/app/actions/play-actions';
+import { getModelAccess } from '@/app/actions/user-actions';
+import ModelSelect from '@/components/ModelSelect';
 import { Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
 import { SUPPORTED_MODELS } from '@/config/models';
 import type { ActionType, HandState } from '@/lib/engine/types';
-import type { Game, GameMessage } from '@/models/game';
+import { chatBudget, liveBots } from '@/lib/game/chat-router';
+import { getModelPickerOptions, type ModelPickerOption } from '@/lib/model-access';
+import type { Game, GameErrorState, Lane, GameMessage } from '@/models/game';
 
 const AVATAR_COLORS = ['#5c8f7b', '#8d6a3f', '#a35f6d', '#4f6f8f', '#96608f', '#6f8f4f', '#8f7b4f'];
 const PUMP_DELAY_MS = 600;
 const BUBBLE_MS = 5200;
 const TALK_TYPES = ['TABLE_TALK', 'BOT_ANSWER', 'BOT_INTRO'];
-const EVENT_TYPES = ['GAME_ACTION', 'HAND_RESULT', 'COMPACTION'];
+/** Shown in the "last event" banner — the Pit Boss's picks are trace, not headline news. */
+const BANNER_TYPES = ['GAME_ACTION', 'HAND_RESULT', 'COMPACTION'];
+const EVENT_TYPES = [...BANNER_TYPES, 'GM_ROUTER_SELECTION'];
+/** Below this the player gets told the table is running out of things to say. */
+const LOW_BUDGET_WARNING = 3;
 
 function avatarColor(game: Game, name: string): string {
   const idx = game.bots.findIndex((b) => b.name === name);
@@ -65,6 +81,9 @@ export default function GameRoom({
   const [game, setGame] = useState(initialGame);
   const [messages, setMessages] = useState(initialMessages);
   const [error, setError] = useState<string | null>(null);
+  // Per-lane failures: the cards and the table talk stop and recover independently.
+  const [gameError, setGameError] = useState<GameErrorState | null>(initialGame.gameError ?? null);
+  const [chatError, setChatError] = useState<GameErrorState | null>(initialGame.chatError ?? null);
   const [acting, setActing] = useState(false);
   const [paused, setPaused] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
@@ -112,6 +131,7 @@ export default function GameRoom({
           if (cancelled) break;
           chatRemainingRef.current = res.remaining;
           setMessages(res.messages);
+          setChatError(res.chatError);
           if (!res.progressed) break;
           await new Promise((r) => setTimeout(r, 400));
         }
@@ -131,6 +151,23 @@ export default function GameRoom({
     const res = await sendChatMessage(gameRef.current.id, text);
     chatRemainingRef.current = res.remaining;
     setMessages(res.messages);
+    setChatError(res.chatError);
+    setChatTick((t) => t + 1);
+  }, []);
+
+  const onNudge = useCallback(async () => {
+    const res = await continueChat(gameRef.current.id);
+    chatRemainingRef.current = res.remaining;
+    setMessages(res.messages);
+    setChatError(res.chatError);
+    setChatTick((t) => t + 1);
+  }, []);
+
+  const onPickSpeaker = useCallback(async (name: string) => {
+    const res = await selectChatSpeakers(gameRef.current.id, [name]);
+    chatRemainingRef.current = res.remaining;
+    setMessages(res.messages);
+    setChatError(res.chatError);
     setChatTick((t) => t + 1);
   }, []);
 
@@ -148,6 +185,12 @@ export default function GameRoom({
           if (cancelled) break;
           setGame(res.game);
           setMessages(res.messages);
+          setGameError(res.gameError);
+          // A bot's table talk drew replies — wake the chat pump to play them out.
+          if (res.chatQueued) {
+            chatRemainingRef.current = res.chatQueued;
+            setChatTick((t) => t + 1);
+          }
           if (!res.progressed) break;
           await new Promise((r) => setTimeout(r, PUMP_DELAY_MS));
         }
@@ -162,6 +205,24 @@ export default function GameRoom({
       cancelled = true;
     };
   }, [pumpTick]);
+
+  /**
+   * Retry a stopped lane: clearing the error IS the retry. The server swaps it for a
+   * one-shot hint (plus a model, if the player picked one), and waking that lane's pump
+   * re-runs whatever step is still pending — the queue head is untouched, so a bot that
+   * failed to speak speaks again.
+   */
+  const onRetry = useCallback(async (lane: Lane, model?: string) => {
+    setError(null);
+    await retryLane(gameRef.current.id, lane, model);
+    if (lane === 'game') {
+      setGameError(null);
+      setPumpTick((t) => t + 1);
+    } else {
+      setChatError(null);
+      setChatTick((t) => t + 1);
+    }
+  }, []);
 
   const onTogglePause = useCallback(() => {
     setPaused((p) => {
@@ -186,8 +247,8 @@ export default function GameRoom({
   }, []);
 
   const myTurn = isHumanTurn(game);
-  const events = messages.filter((m) => EVENT_TYPES.includes(m.messageType));
-  const lastEvent = events[events.length - 1];
+  const banners = messages.filter((m) => BANNER_TYPES.includes(m.messageType));
+  const lastEvent = banners[banners.length - 1];
   const { smallBlind, bigBlind } = game.hand ?? { smallBlind: 0, bigBlind: 0 };
 
   return (
@@ -246,11 +307,8 @@ export default function GameRoom({
           </div>
         )}
 
-        {error && (
-          <div className="mx-6 mt-3 flex flex-none items-center justify-between gap-3 rounded-xl border border-loss bg-panel px-4 py-2.5 text-sm text-loss">
-            <span className="truncate">{error}</span>
-            <Pill onClick={() => { setError(null); setPumpTick((t) => t + 1); }}>Retry</Pill>
-          </div>
+        {(gameError || error) && (
+          <FailureBanner lane="game" failure={gameError} fallbackMessage={error} onRetry={onRetry} />
         )}
 
         {/* table */}
@@ -269,7 +327,125 @@ export default function GameRoom({
         open={railOpen}
         onToggle={() => setRailOpen((o) => !o)}
         onSend={onSendChat}
+        onNudge={onNudge}
+        onPickSpeaker={onPickSpeaker}
+        chatError={chatError}
+        onRetry={onRetry}
       />
+    </div>
+  );
+}
+
+/**
+ * A failed model call, and the two ways out of it: retry the same model (the retried
+ * prompt tells it what went wrong), or spend one call on a different model without
+ * changing the character's real one. There is deliberately no third option that quietly
+ * carries on — a broken key or a failing model should be visible.
+ */
+function FailureBanner({
+  lane,
+  failure,
+  fallbackMessage,
+  onRetry,
+  compact = false,
+}: {
+  lane: Lane;
+  failure: GameErrorState | null;
+  fallbackMessage: string | null;
+  onRetry: (lane: Lane, model?: string) => Promise<void>;
+  compact?: boolean;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [options, setOptions] = useState<ModelPickerOption[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!picking || options) return;
+    getModelAccess()
+      .then((access) => setOptions(getModelPickerOptions(access.tier, new Set(access.providedKeyNames))))
+      .catch(() => setPickError('Could not load the model list.'));
+  }, [picking, options]);
+
+  const model = failure?.model ? SUPPORTED_MODELS.find((m) => m.id === failure.model) : undefined;
+
+  const run = async (attempt: () => Promise<void>) => {
+    setBusy(true);
+    setPickError(null);
+    try {
+      await attempt();
+      setPicking(false);
+    } catch (e) {
+      setPickError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stopped = lane === 'chat' ? 'Table talk is paused.' : 'The game is paused.';
+  // Nothing queued to replay (a routing call decides who speaks, so a failed one leaves no
+  // speaker): the way forward is another message or a nudge, not a retry of nothing.
+  const retryable = failure ? failure.retryable : true;
+
+  return (
+    <div
+      className={`flex-none rounded-xl border border-loss bg-panel ${
+        compact ? 'mx-4 mb-2 px-3 py-2.5' : 'mx-6 mt-3 px-4 py-3'
+      }`}
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={`text-loss ${compact ? 'text-[12px]' : 'text-sm'}`}>
+            {failure?.message ?? fallbackMessage ?? 'Something went wrong.'}
+          </div>
+          <div className="mt-1 text-[12px] leading-snug text-sage">
+            {model ? `${model.displayName} didn't come back with a usable answer. ` : ''}
+            {retryable ? (
+              <>
+                {stopped} Retry with the same model, or spend one call on another — that
+                won&apos;t change{failure?.actor ? ` ${failure.actor}'s` : ' anyone’s'} model for
+                the rest of the game.
+              </>
+            ) : (
+              'Nobody was picked to speak, so there is nothing to retry. Say something else, or nudge the table, to try again.'
+            )}
+          </div>
+          {failure?.details && (
+            <div className="mt-1 truncate text-[11px] text-sage opacity-60" title={failure.details}>
+              {failure.details}
+            </div>
+          )}
+        </div>
+        {retryable && (
+          <div className="flex flex-none items-center gap-2">
+            <Pill onClick={() => void run(() => onRetry(lane))}>Retry</Pill>
+            {failure?.actor && (
+              <Pill selected={picking} onClick={() => setPicking((p) => !p)}>
+                Retry with another model
+              </Pill>
+            )}
+          </div>
+        )}
+      </div>
+
+      {picking && (
+        <div className="mt-3 border-t border-line pt-3">
+          {pickError && <div className="mb-2 text-[12px] text-loss">{pickError}</div>}
+          {options ? (
+            <div className={busy ? 'pointer-events-none opacity-50' : ''}>
+              <ModelSelect
+                options={options}
+                selected={[]}
+                onChange={(ids) => ids[0] && void run(() => onRetry(lane, ids[0]))}
+                mode="single"
+                placeholder="Pick a model for this one call…"
+              />
+            </div>
+          ) : (
+            !pickError && <div className="text-[12px] text-sage">Loading models…</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -607,17 +783,44 @@ function Rail({
   open,
   onToggle,
   onSend,
+  onNudge,
+  onPickSpeaker,
+  chatError,
+  onRetry,
 }: {
   game: Game;
   messages: GameMessage[];
   open: boolean;
   onToggle: () => void;
   onSend: (text: string) => Promise<void>;
+  onNudge: () => Promise<void>;
+  onPickSpeaker: (name: string) => Promise<void>;
+  chatError: GameErrorState | null;
+  onRetry: (lane: Lane, model?: string) => Promise<void>;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [eventsShown, setEventsShown] = useState(true);
+  const [prodding, setProdding] = useState(false);
+
+  // Same budget the server enforces, computed from the same message log.
+  const budget = chatBudget(game, messages);
+  const spent = budget.remaining === 0;
+  const speakers = liveBots(game);
+
+  // A failure with nothing queued leaves these controls live — they are the way out of it.
+  const chatStalled = chatError?.retryable === true;
+
+  const prod = async (run: () => Promise<void>) => {
+    if (prodding || spent || chatStalled) return;
+    setProdding(true);
+    try {
+      await run();
+    } finally {
+      setProdding(false);
+    }
+  };
 
   const feed = messages.filter(
     (m) =>
@@ -632,7 +835,7 @@ function Rail({
 
   const submit = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || sending || chatStalled) return;
     setSending(true);
     setDraft('');
     try {
@@ -711,17 +914,72 @@ function Rail({
             {feed.length === 0 && <p className="text-sm text-olive">Quiet table, for now.</p>}
             <div ref={endRef} />
           </div>
-          <div className="flex flex-none items-center gap-2 border-t border-line px-4 py-2.5">
+          {chatError && (
+            <FailureBanner
+              lane="chat"
+              failure={chatError}
+              fallbackMessage={null}
+              onRetry={onRetry}
+              compact
+            />
+          )}
+          {/* hand the mic: nudge the whole table, or call on one character */}
+          <div className="flex flex-none flex-wrap items-center gap-1.5 border-t border-line px-4 pt-2.5">
+            {chatStalled ? null : spent ? (
+              <span className="text-[11px] leading-snug text-sage opacity-70">
+                {budget.gameExhausted
+                  ? 'The table has talked itself out for this game.'
+                  : 'The table has said its piece this hand — deal on.'}
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => void prod(onNudge)}
+                  disabled={prodding}
+                  className="rounded-full border border-line px-2.5 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40"
+                >
+                  Nudge table
+                </button>
+                {speakers.map((b) => (
+                  <button
+                    key={b.name}
+                    onClick={() => void prod(() => onPickSpeaker(b.name))}
+                    disabled={prodding}
+                    title={`Ask ${b.name} to speak`}
+                    className="flex items-center gap-1.5 rounded-full border border-line px-2 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40"
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: avatarColor(game, b.name) }}
+                    />
+                    {b.name}
+                  </button>
+                ))}
+                {budget.remaining <= LOW_BUDGET_WARNING && (
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-sage opacity-60">
+                    {budget.remaining} left
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex flex-none items-center gap-2 px-4 pb-2.5 pt-2">
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void submit()}
-              placeholder="Say something…"
+              placeholder={
+                chatStalled
+                  ? 'Retry the stalled reply first…'
+                  : spent
+                    ? 'The table is done talking…'
+                    : 'Say something…'
+              }
               className="min-w-0 flex-1 rounded-full border border-line bg-transparent px-3.5 py-2 text-[13px] text-cream outline-none placeholder:text-sage focus:border-gold"
             />
             <button
               onClick={() => void submit()}
-              disabled={sending || !draft.trim()}
+              disabled={sending || chatStalled || !draft.trim()}
               className="h-[34px] w-[34px] flex-none rounded-full border border-[#3f4a35] bg-[rgba(216,178,90,0.14)] text-sm text-cream hover:border-gold disabled:opacity-50"
             >
               ›

@@ -104,7 +104,10 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     messageCounter: 0,
     handHistory: [],
     gameMasterAiType: input.gmModelId,
-    errorState: null,
+    gameError: null,
+    chatError: null,
+    gameRetry: null,
+    chatRetry: null,
     createdAt: now,
     expireAt: now + GAME_CONFIG.gameTtlDays * 24 * 60 * 60 * 1000,
   };

@@ -3,6 +3,7 @@ import { getModelConfig } from '@/config/models';
 import type { AbstractAgent } from './abstract-agent';
 import { AnthropicAgent } from './anthropic-agent';
 import { GoogleAgent } from './google-agent';
+import { MiniMaxAgent } from './minimax-agent';
 import { OpenAiAgent } from './openai-agent';
 
 /** Creates the right vendor agent for a model id from config/models.ts. */
@@ -34,6 +35,8 @@ export function createAgent(
       );
     case 'google':
       return new GoogleAgent(botName, systemPrompt, config.modelApiName, apiKey, enableThinking, config.maxOutputTokens);
+    case 'minimax':
+      return new MiniMaxAgent(botName, systemPrompt, config.modelApiName, apiKey, enableThinking, config.maxOutputTokens, config.baseUrl);
     case 'mistral':
       throw new Error('Mistral agent not ported yet');
   }

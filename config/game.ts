@@ -1,7 +1,7 @@
 /** Table + tournament rules. Pure data — no logic. */
 export const GAME_CONFIG = {
   minPlayers: 2,
-  maxPlayers: 8,
+  maxPlayers: 6,
   startingStack: 10_000,
 
   /** Sit-n-go blind schedule: level increases every `handsPerBlindLevel` hands. */
@@ -27,9 +27,22 @@ export const GAME_CONFIG = {
   /** system prompt + summaries above this triggers context compaction (summarize summaries). */
   contextCompactionTokenThreshold: 12_000,
 
-  /** Router picks this many bots to reply to a human chat message. */
+  /** The Pit Boss picks this many bots to reply to a human message or a nudge. */
   chatRouterMinBots: 1,
   chatRouterMaxBots: 3,
+  /** Reacting to a bot's own table talk: silence is a valid answer, so there is no minimum. */
+  chatRouterMaxReactors: 2,
+
+  /**
+   * Chat spend guardrails. Betting decisions are inherently bounded (a hand needs N of
+   * them), but conversation is not — so bot chat replies are capped per hand and per
+   * game. Counted from the message log, not a stored counter. Once a cap is hit the Pit
+   * Boss is not consulted either, so the routing call is saved along with the replies.
+   */
+  chatBudget: {
+    free: { perHand: 6, perGame: 60 },
+    default: { perHand: 12, perGame: 300 },
+  },
 
   gameTtlDays: 30,
 } as const;

@@ -1,6 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
+import { logger } from '@/lib/logging/logger';
 import { AbstractAgent } from './abstract-agent';
+import { parseAndValidateLlmJson } from './json-response-parser';
 import type { AgentReply, AiMessage, TokenUsage } from './types';
 
 export class GoogleAgent extends AbstractAgent {
@@ -42,7 +44,10 @@ export class GoogleAgent extends AbstractAgent {
       },
     });
     if (!response.text) throw new Error('Google returned empty content');
-    return { content: schema.parse(JSON.parse(response.text)), usage: toUsage(response.usageMetadata) };
+    // Lenient parse handles Gemini's occasional quoted-JSON-string replies.
+    const log = logger.with({ bot: this.botName, model: this.modelApiName });
+    const content = parseAndValidateLlmJson(response.text, schema, (m) => log.info(m));
+    return { content, usage: toUsage(response.usageMetadata) };
   }
 }
 

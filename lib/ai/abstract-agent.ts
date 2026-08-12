@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { isResponseFormatFailure } from '@/lib/ai/errors';
 import { logger } from '@/lib/logging/logger';
 import type { AgentReply, AiMessage } from './types';
 
@@ -60,6 +61,8 @@ export abstract class AbstractAgent {
 function isValidationError(error: unknown): boolean {
   return (
     error instanceof SyntaxError ||
-    (error instanceof Error && error.name === 'ZodError')
+    (error instanceof Error && error.name === 'ZodError') ||
+    // The lenient parser throws plain Errors with stable message prefixes.
+    (error instanceof Error && isResponseFormatFailure(error.message))
   );
 }

@@ -123,7 +123,10 @@ export default function ModelSelect({
 
   const visibleCount = filteredGroups.reduce((sum, [, opts]) => sum + opts.length, 0);
 
-  // Recompute selection from the active filter set: none → empty, several → intersection.
+  // Recompute selection from the active filter set.
+  // - No active filters → empty selection.
+  // - Otherwise → union of the chips (e.g. fast ∪ MiniMax): each chip adds its
+  //   subset, so a provider with no fast models still contributes its models.
   const applyFilters = (nextFast: boolean, nextProviders: Set<string>) => {
     if (!nextFast && nextProviders.size === 0) {
       onChange([]);
@@ -133,9 +136,7 @@ export default function ModelSelect({
       options
         .filter((o) => {
           if (o.disabled) return false;
-          if (nextFast && !modelIsFast(o.id)) return false;
-          if (nextProviders.size > 0 && !nextProviders.has(providerOf(o.id))) return false;
-          return true;
+          return (nextFast && modelIsFast(o.id)) || nextProviders.has(providerOf(o.id));
         })
         .map((o) => o.id),
     );

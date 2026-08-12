@@ -50,7 +50,7 @@ export const PROVIDER_NAMES: Record<ApiKeyName, string> = {
   MINIMAX_API_KEY: 'MiniMax',
 };
 
-export type AgentKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'openai-compatible';
+export type AgentKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'minimax' | 'openai-compatible';
 
 /** Speed/cost hints shown in the model picker (werewolf's tag vocabulary). */
 export type ModelTag =
@@ -341,17 +341,17 @@ export const SUPPORTED_MODELS: ModelConfig[] = [
     structuredMode: 'json_object',
     tags: ['slow', 'cheap'],
   },
-  // MiniMax
+  // MiniMax — dedicated agent: the M-series API has no response_format at all, so the generic
+  // openai-compatible json_object mode breaks; the schema rides in-prompt with lenient parsing.
   {
     id: 'minimax',
     displayName: 'MiniMax M3',
-    agentKind: 'openai-compatible',
+    agentKind: 'minimax',
     modelApiName: 'MiniMax-M3',
     apiKeyName: 'MINIMAX_API_KEY',
     baseUrl: 'https://api.minimax.io/v1',
     hasThinking: true,
     maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
     tags: ['very-slow', 'cheap'],
   },
   // Sakana

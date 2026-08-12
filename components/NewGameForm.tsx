@@ -7,6 +7,7 @@ import type { ModelAccess } from '@/app/actions/user-actions';
 import { getModelAccess } from '@/app/actions/user-actions';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, Panel, Pill } from '@/components/ui';
+import { GAME_CONFIG } from '@/config/game';
 import { SUPPORTED_MODELS } from '@/config/models';
 import { PERSONAS } from '@/config/personas';
 import { deckCapacity, FREE_TIER_UNLIMITED, getModelPickerOptions } from '@/lib/model-access';
@@ -14,12 +15,24 @@ import type { GamePreview, GamePreviewInput } from '@/models/preview';
 
 const AVATAR_COLORS = ['#5c8f7b', '#8d6a3f', '#a35f6d', '#4f6f8f', '#96608f', '#6f8f4f', '#8f7b4f'];
 
+/** Derived so the picker can never offer a seat count the server would reject. */
+const SEAT_OPTIONS = Array.from(
+  { length: GAME_CONFIG.maxPlayers - GAME_CONFIG.minPlayers + 1 },
+  (_, i) => GAME_CONFIG.minPlayers + i,
+);
+
+// Fugu Ultra is opt-in only (expensive) — excluded from the default selection but
+// still selectable in the dropdown. Touching a filter chip replaces this default
+// with the union of the active chips.
+const OPT_IN_ONLY = new Set(['fugu']);
+const DEFAULT_BOT_MODELS = SUPPORTED_MODELS.filter((m) => !OPT_IN_ONLY.has(m.id)).map((m) => m.id);
+
 export default function NewGameForm() {
   const router = useRouter();
   const [theme, setTheme] = useState('');
   const [humanPlayerName, setHumanPlayerName] = useState('');
   const [playerCount, setPlayerCount] = useState(4);
-  const [botModelIds, setBotModelIds] = useState<string[]>(['claude']);
+  const [botModelIds, setBotModelIds] = useState<string[]>(DEFAULT_BOT_MODELS);
   const [gmModelId, setGmModelId] = useState('claude');
   const [access, setAccess] = useState<ModelAccess | null>(null);
   const [preview, setPreview] = useState<GamePreview | null>(null);
@@ -28,8 +41,27 @@ export default function NewGameForm() {
 
   const input: GamePreviewInput = { theme, humanPlayerName, playerCount, botModelIds, gmModelId };
 
+  // Once tier/keys load, drop selections the tier doesn't allow and re-seat the GM.
   useEffect(() => {
-    getModelAccess().then(setAccess).catch(() => setAccess({ tier: 'api', providedKeyNames: [] }));
+    getModelAccess()
+      .catch((): ModelAccess => ({ tier: 'api', providedKeyNames: [] }))
+      .then((loaded) => {
+        setAccess(loaded);
+        const enabled = new Set(
+          getModelPickerOptions(loaded.tier, new Set<string>(loaded.providedKeyNames))
+            .filter((o) => !o.disabled)
+            .map((o) => o.id),
+        );
+        setBotModelIds((prev) => {
+          const kept = prev.filter((id) => enabled.has(id));
+          if (kept.length > 0) return kept;
+          // Fall back to whatever the tier actually allows. Fugu stays opt-in
+          // unless it's the only thing available.
+          const fallback = [...enabled].filter((id) => !OPT_IN_ONLY.has(id));
+          return fallback.length > 0 ? fallback : [...enabled];
+        });
+        setGmModelId((prev) => (enabled.has(prev) ? prev : ([...enabled][0] ?? prev)));
+      });
   }, []);
 
   const tier = access?.tier ?? 'api';
@@ -37,17 +69,6 @@ export default function NewGameForm() {
     if (!access) return SUPPORTED_MODELS.map((m) => ({ id: m.id, disabled: false }));
     return getModelPickerOptions(access.tier, new Set<string>(access.providedKeyNames));
   }, [access]);
-
-  // Once tier/keys load, drop selections the tier doesn't allow and re-seat the GM.
-  useEffect(() => {
-    if (!access) return;
-    const enabled = new Set(pickerOptions.filter((o) => !o.disabled).map((o) => o.id));
-    setBotModelIds((prev) => {
-      const kept = prev.filter((id) => enabled.has(id));
-      return kept.length > 0 ? kept : [...enabled].slice(0, 1);
-    });
-    setGmModelId((prev) => (enabled.has(prev) ? prev : ([...enabled][0] ?? prev)));
-  }, [access, pickerOptions]);
 
   const botCount = playerCount - 1;
   const capacity = deckCapacity(botModelIds, tier, gmModelId);
@@ -105,7 +126,7 @@ export default function NewGameForm() {
         <div>
           <CapsLabel className="mb-3">Seats</CapsLabel>
           <div className="flex flex-wrap gap-2">
-            {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+            {SEAT_OPTIONS.map((n) => (
               <Pill key={n} selected={playerCount === n} onClick={() => setPlayerCount(n)}>
                 {n}
               </Pill>

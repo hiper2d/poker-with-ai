@@ -1,14 +1,20 @@
 /** Shared test builders for game-level tests. Not shipped — imported by *.test.ts only. */
 import type { Game, GameMessage } from '@/models/game';
 
-export function msg(counter: number, type: string, text: string, author = 'Vex'): GameMessage {
+export function msg(
+  counter: number,
+  type: string,
+  text: string,
+  author = 'Vex',
+  handNumber = 1,
+): GameMessage {
   return {
     id: `${String(counter).padStart(6, '0')}-${author}-to-ALL`,
     recipientName: 'ALL',
     authorName: author,
     msg: text,
     messageType: type as GameMessage['messageType'],
-    handNumber: 1,
+    handNumber,
     timestamp: 0,
   };
 }

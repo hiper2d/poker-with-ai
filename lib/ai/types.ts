@@ -29,6 +29,14 @@ export const BettingDecisionSchema = z.object({
 
 export type BettingDecision = z.infer<typeof BettingDecisionSchema>;
 
+/** The Pit Boss's pick of who talks next. An empty `speakers` list is a valid answer. */
+export const ChatRoutingSchema = z.object({
+  reasoning: z.string().describe('One short sentence on why these players speak next'),
+  speakers: z.array(z.string()).describe('Player names, in the order they should speak'),
+});
+
+export type ChatRouting = z.infer<typeof ChatRoutingSchema>;
+
 /** Output of a compaction call (chat or context — same shape). */
 export const CompactionSchema = z.object({
   summary: z.string().describe('Narrative summary of the period being compacted'),
