@@ -15,7 +15,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // Anthropic
   'claude-fable': { inputPerMTok: 10, outputPerMTok: 50, cachedInputPerMTok: 1 },
   'claude-opus': { inputPerMTok: 5, outputPerMTok: 25, cachedInputPerMTok: 0.5 },
-  claude: { inputPerMTok: 3, outputPerMTok: 15, cachedInputPerMTok: 0.2 },
+  claude: { inputPerMTok: 2, outputPerMTok: 10, cachedInputPerMTok: 0.2 },
   'claude-haiku': { inputPerMTok: 1, outputPerMTok: 5, cachedInputPerMTok: 0.1 },
   // OpenAI
   'gpt-sol': { inputPerMTok: 5, outputPerMTok: 30, cachedInputPerMTok: 0.5 },
@@ -28,8 +28,9 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // DeepSeek
   'deepseek-flash': { inputPerMTok: 0.14, outputPerMTok: 0.28, cachedInputPerMTok: 0.0028 },
   deepseek: { inputPerMTok: 0.435, outputPerMTok: 0.87, cachedInputPerMTok: 0.003625 },
-  // Grok
-  grok: { inputPerMTok: 2, outputPerMTok: 6, cachedInputPerMTok: 0.3 },
+  // Grok (cached price is per-model on xAI, not a uniform ratio; rates double past 200K
+  // context — not modeled, see header)
+  grok: { inputPerMTok: 2, outputPerMTok: 6, cachedInputPerMTok: 0.5 },
   // Mistral (cached tokens bill at 10% of input price)
   'mistral-large': { inputPerMTok: 0.5, outputPerMTok: 1.5, cachedInputPerMTok: 0.05 },
   'mistral-medium': { inputPerMTok: 1.5, outputPerMTok: 7.5, cachedInputPerMTok: 0.15 },
@@ -49,7 +50,11 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   fugu: { inputPerMTok: 5, outputPerMTok: 30, cachedInputPerMTok: 0.5 },
 };
 
-export const PAID_TIER_MARKUP = 1.3;
+/**
+ * Markup on model cost for paid-tier billing, werewolf's additive form:
+ * charged = cost * (1 + PAID_TIER_MARKUP). Poker's rate is 30% (the profile page says so).
+ */
+export const PAID_TIER_MARKUP = 0.3;
 
 export function computeCostUsd(
   modelId: string,

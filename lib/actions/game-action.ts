@@ -3,6 +3,7 @@ import { COLLECTIONS, db } from '@/lib/firebase/server';
 import { Logger, logger } from '@/lib/logging/logger';
 import { ERROR_FIELD } from '@/lib/game/retry';
 import type { Game, GameErrorState, Lane, GameState } from '@/models/game';
+import { coerceTier } from '@/models/user';
 
 export interface ActionContext {
   userEmail: string;
@@ -31,7 +32,13 @@ export interface GameActionOptions {
 export class ActionError extends Error {
   constructor(
     message: string,
-    public readonly code: 'UNAUTHENTICATED' | 'NOT_FOUND' | 'STALE' | 'INTERNAL',
+    public readonly code:
+      | 'UNAUTHENTICATED'
+      | 'FORBIDDEN'
+      | 'TIER_MISMATCH'
+      | 'NOT_FOUND'
+      | 'STALE'
+      | 'INTERNAL',
   ) {
     super(message);
   }
@@ -58,6 +65,25 @@ export function gameAction<TArgs extends unknown[], TResult>(
     const snapshot = await ref.get();
     if (!snapshot.exists) throw new ActionError(`Game ${gameId} not found`, 'NOT_FOUND');
     const game = snapshot.data() as Game;
+
+    if (game.createdBy !== session.user.email) {
+      throw new ActionError('Not your table', 'FORBIDDEN');
+    }
+
+    // Werewolf's tier guard: a game keeps running only under the tier it was created
+    // with. Free-tier games have caps a paid game doesn't, and billing keys off the
+    // user's CURRENT tier — without this, downgrading to free would keep an expensive
+    // paid-tier table running on the platform's dime. (Legacy 'api' games read as free.)
+    const gameTier = coerceTier(game.createdWithTier);
+    const userSnapshot = await db.collection(COLLECTIONS.users).doc(session.user.email).get();
+    const userTier = coerceTier(userSnapshot.data()?.tier);
+    if (gameTier !== userTier) {
+      throw new ActionError(
+        `This table was opened on the ${gameTier} tier, but your account is now on ${userTier}. ` +
+          `Switch back to ${gameTier} on your profile page to keep playing it, or start a new table.`,
+        'TIER_MISMATCH',
+      );
+    }
 
     if (options.expectState && !options.expectState.includes(game.status)) {
       throw new ActionError(`Expected ${options.expectState.join('|')}, got ${game.status}`, 'STALE');

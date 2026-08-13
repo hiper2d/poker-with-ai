@@ -27,7 +27,8 @@ export interface GameEvent {
 export type ChatTrigger =
   | 'router' // the Pit Boss picked this speaker
   | 'manual' // the human picked this speaker directly
-  | 'reaction'; // the Pit Boss routed a reply to a bot's table talk
+  | 'reaction' // the Pit Boss routed a reply to a bot's table talk
+  | 'result'; // the hand just settled — winner gloats, loser vents
 
 /** Chat events run on their own queue + pump and never block the game queue. */
 export interface ChatEvent {
@@ -79,6 +80,8 @@ export interface HandRecord {
   /** compact engine-written line, e.g. "Vex raised pre, c-bet flop, Duchess folded river" */
   keyActions: string;
   eliminated: string[];
+  /** Everyone who reached showdown and their cards — absent when the pot was folded to. */
+  showdown?: { name: string; cards: string[] }[];
 }
 
 // ---- Message system (werewolf-style recipient targeting) ----
@@ -197,6 +200,10 @@ export interface Game {
   messageCounter: number;
   handHistory: HandRecord[];
   gameMasterAiType: string;
+  /** GM-model usage (dealer narration + Pit Boss routing), accumulated by cost tracking. */
+  gameMasterTokenUsage?: TokenUsageTotals;
+  /** Model cost (pre-markup) of every AI call this game has made, in USD. */
+  totalGameCost?: number;
   /** Per-lane retry state. A set error stops that lane's pump until the player retries. */
   gameError?: GameErrorState | null;
   chatError?: GameErrorState | null;

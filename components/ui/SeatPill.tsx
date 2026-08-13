@@ -16,6 +16,8 @@ export interface SeatPillProps {
   dimmed?: boolean;
   /** show the dealer badge */
   dealer?: boolean;
+  /** blind posted this hand */
+  blind?: 'SB' | 'BB';
 }
 
 /** A player at the table — themed seat plate. Position it absolutely from the parent. */
@@ -29,6 +31,7 @@ export default function SeatPill({
   active = false,
   dimmed = false,
   dealer = false,
+  blind,
 }: SeatPillProps) {
   const line = folded ? 'folded' : lastAction || stack.toLocaleString();
   return (
@@ -50,6 +53,11 @@ export default function SeatPill({
       {dealer && (
         <span className="r-sm absolute -right-1.5 -top-1.5 flex h-4.5 min-w-4.5 items-center justify-center bg-gold px-1 text-[9px] font-bold text-[color:var(--t-acc-ink)]">
           D
+        </span>
+      )}
+      {blind && (
+        <span className="r-sm absolute -left-1.5 -top-1.5 flex h-4.5 items-center justify-center border border-line bg-panel px-1 text-[9px] font-bold text-sage">
+          {blind}
         </span>
       )}
     </div>

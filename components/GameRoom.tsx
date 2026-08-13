@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   advanceChat,
   advanceGame,
   continueChat,
   humanAction,
+  nextHand,
   retryLane,
   selectChatSpeakers,
   sendChatMessage,
@@ -13,6 +14,7 @@ import {
 import { getModelAccess } from '@/app/actions/user-actions';
 import ModelSelect from '@/components/ModelSelect';
 import { Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
+import { GAME_CONFIG } from '@/config/game';
 import { SUPPORTED_MODELS } from '@/config/models';
 import type { ActionType, HandState } from '@/lib/engine/types';
 import { chatBudget, liveBots } from '@/lib/game/chat-router';
@@ -21,17 +23,35 @@ import type { Game, GameErrorState, Lane, GameMessage } from '@/models/game';
 
 const AVATAR_COLORS = ['#5c8f7b', '#8d6a3f', '#a35f6d', '#4f6f8f', '#96608f', '#6f8f4f', '#8f7b4f'];
 const PUMP_DELAY_MS = 600;
-const BUBBLE_MS = 5200;
+const BUBBLE_MS = 15_000;
 const TALK_TYPES = ['TABLE_TALK', 'BOT_ANSWER', 'BOT_INTRO'];
 /** Shown in the "last event" banner — the Pit Boss's picks are trace, not headline news. */
 const BANNER_TYPES = ['GAME_ACTION', 'HAND_RESULT', 'COMPACTION'];
 const EVENT_TYPES = [...BANNER_TYPES, 'GM_ROUTER_SELECTION'];
 /** Below this the player gets told the table is running out of things to say. */
 const LOW_BUDGET_WARNING = 3;
+/** The rail shows only the tail of the log (events included when shown) — older talk has
+ *  been absorbed into bot memory. */
+const CHAT_FEED_LIMIT = 50;
 
 function avatarColor(game: Game, name: string): string {
   const idx = game.bots.findIndex((b) => b.name === name);
   return idx >= 0 ? AVATAR_COLORS[idx % AVATAR_COLORS.length] : '#d8b25a';
+}
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** Tracks the desktop breakpoint. The server snapshot says desktop, so SSR markup matches. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(DESKTOP_QUERY);
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => true,
+  );
 }
 
 function isHumanTurn(game: Game): boolean {
@@ -85,20 +105,27 @@ export default function GameRoom({
   const [gameError, setGameError] = useState<GameErrorState | null>(initialGame.gameError ?? null);
   const [chatError, setChatError] = useState<GameErrorState | null>(initialGame.chatError ?? null);
   const [acting, setActing] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [railOpen, setRailOpen] = useState(true);
+  const isDesktop = useIsDesktop();
+  // null = no explicit choice yet — the rail follows the breakpoint (auto-hidden on mobile).
+  const [railPref, setRailPref] = useState<boolean | null>(null);
+  const railOpen = railPref ?? isDesktop;
   const [pumpTick, setPumpTick] = useState(0);
   const [chatTick, setChatTick] = useState(0);
   const [bubbles, setBubbles] = useState<Record<string, string>>({});
+  // Who is queued to speak, in order — [0] is talking now. Mirrors the server's chatQueue.
+  const [chatQueue, setChatQueue] = useState<string[]>(initialGame.chatQueue.map((e) => e.actor));
+  // Full-text popup for a truncated "last event" banner.
+  const [eventOpen, setEventOpen] = useState(false);
   const gameRef = useRef(game);
-  const pausedRef = useRef(paused);
   const inFlightRef = useRef(false);
   const chatInFlightRef = useRef(false);
+  // Pump cancellation — shared refs so a StrictMode remount can revive an in-flight loop.
+  const pumpCancelledRef = useRef(false);
+  const chatCancelledRef = useRef(false);
   const chatRemainingRef = useRef(initialGame.chatQueue.length);
   const bubbleSeenRef = useRef(new Set(initialMessages.map((m) => m.id)));
   const bubbleTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   gameRef.current = game;
-  pausedRef.current = paused;
 
   // Seat speech bubbles: any new talk message from a bot pops up at its seat, then fades.
   useEffect(() => {
@@ -120,16 +147,23 @@ export default function GameRoom({
   useEffect(() => () => bubbleTimersRef.current.forEach(clearTimeout), []);
 
   // Chat pump — fully independent of the game pump; drains intros/replies in parallel.
+  //
+  // The cancel flag is a shared ref, NOT an effect-local variable: StrictMode mounts run
+  // effect → cleanup → effect synchronously, and with a local flag the first invocation's
+  // in-flight loop would see itself cancelled, discard its result, and die while the second
+  // invocation bails on the inFlight guard — leaving no pump at all. Re-arming the shared
+  // ref revives the surviving loop; results are applied unconditionally (a setState after a
+  // real unmount is a no-op).
   useEffect(() => {
-    let cancelled = false;
+    chatCancelledRef.current = false;
     const run = async () => {
       if (chatInFlightRef.current) return;
       chatInFlightRef.current = true;
       try {
-        while (!cancelled && chatRemainingRef.current > 0) {
+        while (!chatCancelledRef.current && chatRemainingRef.current > 0) {
           const res = await advanceChat(gameRef.current.id);
-          if (cancelled) break;
-          chatRemainingRef.current = res.remaining;
+          chatRemainingRef.current = res.queue.length;
+          setChatQueue(res.queue);
           setMessages(res.messages);
           setChatError(res.chatError);
           if (!res.progressed) break;
@@ -143,21 +177,41 @@ export default function GameRoom({
     };
     void run();
     return () => {
-      cancelled = true;
+      chatCancelledRef.current = true;
     };
   }, [chatTick]);
 
   const onSendChat = useCallback(async (text: string) => {
-    const res = await sendChatMessage(gameRef.current.id, text);
-    chatRemainingRef.current = res.remaining;
-    setMessages(res.messages);
-    setChatError(res.chatError);
-    setChatTick((t) => t + 1);
+    // Optimistic echo: the server persists the message before the Pit Boss routing call,
+    // so it's safe to show immediately instead of waiting out an LLM round-trip. The
+    // authoritative list from the action replaces it; a failed send takes it back.
+    const echo: GameMessage = {
+      id: `local-${Date.now()}`,
+      recipientName: 'ALL',
+      authorName: gameRef.current.humanPlayerName,
+      msg: text,
+      messageType: 'HUMAN_PLAYER_MESSAGE',
+      handNumber: gameRef.current.handNumber,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, echo]);
+    try {
+      const res = await sendChatMessage(gameRef.current.id, text);
+      chatRemainingRef.current = res.queue.length;
+      setChatQueue(res.queue);
+      setMessages(res.messages);
+      setChatError(res.chatError);
+      setChatTick((t) => t + 1);
+    } catch (e) {
+      setMessages((prev) => prev.filter((m) => m.id !== echo.id));
+      throw e; // submit() restores the draft
+    }
   }, []);
 
   const onNudge = useCallback(async () => {
     const res = await continueChat(gameRef.current.id);
-    chatRemainingRef.current = res.remaining;
+    chatRemainingRef.current = res.queue.length;
+    setChatQueue(res.queue);
     setMessages(res.messages);
     setChatError(res.chatError);
     setChatTick((t) => t + 1);
@@ -165,25 +219,28 @@ export default function GameRoom({
 
   const onPickSpeaker = useCallback(async (name: string) => {
     const res = await selectChatSpeakers(gameRef.current.id, [name]);
-    chatRemainingRef.current = res.remaining;
+    chatRemainingRef.current = res.queue.length;
+    setChatQueue(res.queue);
     setMessages(res.messages);
     setChatError(res.chatError);
     setChatTick((t) => t + 1);
   }, []);
 
-  // Game pump — one server step at a time until it's the human's turn, pause, or game over.
+  // Game pump — one server step at a time until it's the human's turn, the between-hands
+  // break (HAND_RESULTS waits for "Deal next hand"), or game over.
+  // Shared cancel ref for the same StrictMode reason as the chat pump above.
   useEffect(() => {
-    let cancelled = false;
+    pumpCancelledRef.current = false;
     const run = async () => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
-        while (!cancelled && !pausedRef.current) {
+        while (!pumpCancelledRef.current) {
           const g = gameRef.current;
           if (isHumanTurn(g) || g.status === 'GAME_OVER') break;
           const res = await advanceGame(g.id);
-          if (cancelled) break;
           setGame(res.game);
+          setChatQueue(res.game.chatQueue.map((e) => e.actor));
           setMessages(res.messages);
           setGameError(res.gameError);
           // A bot's table talk drew replies — wake the chat pump to play them out.
@@ -195,14 +252,14 @@ export default function GameRoom({
           await new Promise((r) => setTimeout(r, PUMP_DELAY_MS));
         }
       } catch (e) {
-        if (!cancelled) setError(String(e instanceof Error ? e.message : e));
+        setError(String(e instanceof Error ? e.message : e));
       } finally {
         inFlightRef.current = false;
       }
     };
     void run();
     return () => {
-      cancelled = true;
+      pumpCancelledRef.current = true;
     };
   }, [pumpTick]);
 
@@ -224,13 +281,6 @@ export default function GameRoom({
     }
   }, []);
 
-  const onTogglePause = useCallback(() => {
-    setPaused((p) => {
-      if (p) setPumpTick((t) => t + 1); // resuming — wake the pump
-      return !p;
-    });
-  }, []);
-
   const onHumanAction = useCallback(async (type: ActionType, amount?: number) => {
     setActing(true);
     setError(null);
@@ -246,13 +296,31 @@ export default function GameRoom({
     }
   }, []);
 
+  const onNextHand = useCallback(async () => {
+    setActing(true);
+    setError(null);
+    try {
+      const res = await nextHand(gameRef.current.id);
+      setGame(res.game);
+      setMessages(res.messages);
+      setPumpTick((t) => t + 1);
+    } catch {
+      // stale click (another tab already dealt) — resync via the pump
+      setPumpTick((t) => t + 1);
+    } finally {
+      setActing(false);
+    }
+  }, []);
+
   const myTurn = isHumanTurn(game);
   const banners = messages.filter((m) => BANNER_TYPES.includes(m.messageType));
   const lastEvent = banners[banners.length - 1];
-  const { smallBlind, bigBlind } = game.hand ?? { smallBlind: 0, bigBlind: 0 };
+  // Before the first deal, show the level the next hand will be played at instead of 0 · 0.
+  const { smallBlind, bigBlind } =
+    game.hand ?? GAME_CONFIG.blindLevels[game.blindLevel] ?? GAME_CONFIG.blindLevels[0];
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
+    <div className="relative flex h-[calc(100dvh-3.5rem)] overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar */}
         <div className="flex flex-none flex-wrap items-center gap-4 border-b border-line px-6 py-3">
@@ -272,27 +340,28 @@ export default function GameRoom({
             </span>
           </div>
           <div className="flex-1" />
-          {!myTurn && game.status !== 'GAME_OVER' && !paused && (
+          {!myTurn && game.status !== 'GAME_OVER' && (
             <span className="text-[11px] uppercase tracking-[0.2em] text-gold-pale">
               {game.hand && !game.hand.complete && game.hand.toAct
                 ? `${game.hand.toAct} is thinking…`
-                : 'dealing…'}
+                : game.status === 'HAND_RESULTS'
+                  ? 'hand complete'
+                  : 'dealing…'}
             </span>
           )}
-          <Pill selected={!paused} onClick={onTogglePause}>
-            {paused ? 'Play' : 'Pause'}
-          </Pill>
-          <Pill selected={railOpen} onClick={() => setRailOpen((o) => !o)}>
+          <Pill selected={railOpen} onClick={() => setRailPref(!railOpen)}>
             Table talk
           </Pill>
         </div>
 
-        {/* last event banner */}
+        {/* last event banner — truncates when long; click for the full text */}
         {lastEvent && typeof lastEvent.msg === 'string' && (
           <div className="flex-none px-6 pt-3">
-            <div
+            <button
               key={lastEvent.id}
-              className="row-in flex items-center gap-3.5 rounded-2xl border border-line bg-panel shadow-theme px-4.5 py-3"
+              onClick={() => setEventOpen(true)}
+              title="Show the full event"
+              className="row-in flex w-full items-center gap-3.5 rounded-2xl border border-line bg-panel px-4.5 py-3 text-left shadow-theme transition hover:border-gold-dark"
             >
               <span className="h-2 w-2 flex-none rounded-full bg-gold shadow-[0_0_12px_2px_color-mix(in_srgb,var(--t-acc)_50%,transparent)]" />
               <div className="flex min-w-0 flex-col">
@@ -303,6 +372,46 @@ export default function GameRoom({
               <div className="flex-none text-[11px] tracking-[0.1em] text-sage">
                 {fmtTime(lastEvent.timestamp)}
               </div>
+              <svg
+                className="flex-none text-sage"
+                width="13"
+                height="13"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8.5 2h3.5v3.5M12 2L7.75 6.25M5.5 12H2V8.5M2 12l4.25-4.25" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {eventOpen && lastEvent && typeof lastEvent.msg === 'string' && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5"
+            onClick={() => setEventOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg r-md border border-line bg-panel p-5 shadow-theme"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                <div className="label-caps">Last event</div>
+                <div className="text-[11px] tracking-[0.1em] text-sage">
+                  {fmtTime(lastEvent.timestamp)}
+                </div>
+              </div>
+              <p className="font-serif text-xl leading-relaxed text-cream">{lastEvent.msg}</p>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setEventOpen(false)}
+                  className="r-sm border border-line px-4 py-2 text-[13px] text-sage transition hover:border-gold hover:text-cream"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -312,20 +421,26 @@ export default function GameRoom({
         )}
 
         {/* table */}
-        <div className="flex min-h-0 flex-1 items-center justify-center px-10 pb-2 pt-8 xl:px-24">
+        <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-2 pt-6 sm:px-10 sm:pt-8 xl:px-24">
           <div className="w-full max-w-[880px]">
-            <PokerTable game={game} bubbles={bubbles} />
+            <PokerTable
+              game={game}
+              bubbles={bubbles}
+              onDismissBubble={(name) => setBubbles((b) => ({ ...b, [name]: '' }))}
+            />
           </div>
         </div>
 
-        <HeroBar game={game} myTurn={myTurn} acting={acting} onAction={onHumanAction} />
+        <HeroBar game={game} myTurn={myTurn} acting={acting} onAction={onHumanAction} onNextHand={onNextHand} />
       </div>
 
       <Rail
         game={game}
         messages={messages}
         open={railOpen}
-        onToggle={() => setRailOpen((o) => !o)}
+        overlay={!isDesktop}
+        queue={chatQueue}
+        onToggle={() => setRailPref(!railOpen)}
         onSend={onSendChat}
         onNudge={onNudge}
         onPickSpeaker={onPickSpeaker}
@@ -363,7 +478,7 @@ function FailureBanner({
   useEffect(() => {
     if (!picking || options) return;
     getModelAccess()
-      .then((access) => setOptions(getModelPickerOptions(access.tier, new Set(access.providedKeyNames))))
+      .then((access) => setOptions(getModelPickerOptions(access.tier)))
       .catch(() => setPickError('Could not load the model list.'));
   }, [picking, options]);
 
@@ -482,7 +597,15 @@ function FlyingChip({ flight }: { flight: ChipFlight }) {
   );
 }
 
-function PokerTable({ game, bubbles }: { game: Game; bubbles: Record<string, string> }) {
+function PokerTable({
+  game,
+  bubbles,
+  onDismissBubble,
+}: {
+  game: Game;
+  bubbles: Record<string, string>;
+  onDismissBubble: (name: string) => void;
+}) {
   const seats = [...game.seats].sort((a, b) => a.seatIndex - b.seatIndex);
   const n = seats.length;
   const humanIdx = seats.findIndex((s) => s.isHuman);
@@ -552,6 +675,20 @@ function PokerTable({ game, bubbles }: { game: Game; bubbles: Record<string, str
     return '';
   };
 
+  // Who posted the blinds: hand.players is in order starting left of the button, and
+  // heads-up the button posts the small blind (mirrors startHand in the engine).
+  const handPlayers = game.hand && !game.hand.complete ? game.hand.players : null;
+  const headsUp = handPlayers?.length === 2;
+  const sbName = handPlayers ? (headsUp ? handPlayers[1] : handPlayers[0]).name : null;
+  const bbName = handPlayers ? (headsUp ? handPlayers[0] : handPlayers[1]).name : null;
+
+  // During the between-hands pause, everyone who reached showdown has their cards on the felt.
+  const lastRecord = game.handHistory[game.handHistory.length - 1];
+  const showdownCards =
+    game.status === 'HAND_RESULTS' && lastRecord?.handNumber === game.handNumber
+      ? new Map((lastRecord.showdown ?? []).map((s) => [s.name, s.cards]))
+      : null;
+
   return (
     <TableFelt
       seats={
@@ -587,6 +724,24 @@ function PokerTable({ game, bubbles }: { game: Game; bubbles: Record<string, str
           {flights.map((f) => (
             <FlyingChip key={f.id} flight={f} />
           ))}
+          {/* showdown reveal — cards fan out where each player's chips sat */}
+          {showdownCards &&
+            seats.map((seat, i) => {
+              const cards = showdownCards.get(seat.name);
+              if (!cards?.length) return null;
+              const pos = stackPos(i);
+              return (
+                <div
+                  key={`show-${seat.name}`}
+                  className="chip-pop absolute z-[13] flex gap-1"
+                  style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+                >
+                  {cards.map((card) => (
+                    <PlayingCard key={card} card={card} />
+                  ))}
+                </div>
+              );
+            })}
           {seats.map((seat, i) => {
             const { left, top } = seatPos(i);
             const bot = game.bots.find((b) => b.name === seat.name);
@@ -619,12 +774,35 @@ function PokerTable({ game, bubbles }: { game: Game; bubbles: Record<string, str
                   active={acting}
                   dimmed={seat.status === 'eliminated' || player?.folded}
                   dealer={game.buttonSeat === seat.seatIndex}
+                  blind={seat.name === sbName ? 'SB' : seat.name === bbName ? 'BB' : undefined}
                 />
                 {bubble && (
-                  <div className="bubble-pop absolute left-1/2 top-[calc(100%+10px)] z-[35] w-56 -translate-x-1/2">
-                    <ChatBubble author={seat.name} authorColor={avatarColor(game, seat.name)}>
-                      {bubble}
-                    </ChatBubble>
+                  // Clamped to the seat's side of the felt so edge seats don't push the
+                  // bubble off-screen, and flipped above for the bottom row (incl. the human).
+                  <div
+                    className={`absolute z-[35] w-56 max-w-[62vw] ${
+                      top > 60 ? 'bottom-[calc(100%+10px)]' : 'top-[calc(100%+10px)]'
+                    } ${
+                      left < 25
+                        ? 'bubble-pop-edge left-0'
+                        : left > 75
+                          ? 'bubble-pop-edge right-0'
+                          : 'bubble-pop left-1/2 -translate-x-1/2'
+                    }`}
+                  >
+                    <div className="relative w-fit max-w-full">
+                      <ChatBubble author={seat.name} authorColor={avatarColor(game, seat.name)}>
+                        {bubble}
+                      </ChatBubble>
+                      <button
+                        onClick={() => onDismissBubble(seat.name)}
+                        title="Dismiss"
+                        aria-label={`Dismiss ${seat.name}'s message`}
+                        className="absolute -right-1.5 -top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-line bg-panel text-[10px] leading-none text-sage shadow-theme transition hover:border-gold hover:text-cream"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -658,11 +836,13 @@ function HeroBar({
   myTurn,
   acting,
   onAction,
+  onNextHand,
 }: {
   game: Game;
   myTurn: boolean;
   acting: boolean;
   onAction: (type: ActionType, amount?: number) => void;
+  onNextHand: () => void;
 }) {
   const hand = game.hand;
   const me = hand?.players.find((p) => p.name === game.humanPlayerName);
@@ -699,7 +879,9 @@ function HeroBar({
     : [];
 
   return (
-    <div className="flex-none px-6 pb-5">
+    // z-40: the bottom seats hang below the felt (z-20/z-35 with theme tilts) and would
+    // otherwise paint over the raise sizer and swallow clicks on its preset pills.
+    <div className="relative z-40 flex-none px-3 pb-4 sm:px-6 sm:pb-5">
       {myTurn && legal && legal.canRaise && sizerOpen && (
         <div className="mb-3 flex flex-col gap-2.5 r-md shadow-theme border border-line bg-panel p-3.5">
           <div className="flex flex-wrap items-center gap-3">
@@ -724,15 +906,20 @@ function HeroBar({
           />
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-3.5">
+      {/* narrow screens: the stack rides above so cards and buttons share one row */}
+      <div className="mb-1 text-sm tabular-nums text-gold sm:hidden">
+        {(me.startingStack - me.totalCommitted).toLocaleString()}
+      </div>
+      {/* overflow-x-auto: worst-case (big call amounts on a tiny screen) scrolls, never wraps */}
+      <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto sm:gap-3.5">
         <div className="flex items-center gap-2.5">
-          <CapsLabel>Your hand</CapsLabel>
+          <CapsLabel className="hidden sm:block">Your hand</CapsLabel>
           <div className="flex gap-2">
             {(me.holeCards ?? []).map((card) => (
               <PlayingCard key={card} card={card} />
             ))}
           </div>
-          <div className="ml-1">
+          <div className="ml-1 hidden sm:block">
             <div className="font-serif text-lg leading-tight text-cream">{game.humanPlayerName}</div>
             <div className="text-sm tabular-nums text-gold">
               {(me.startingStack - me.totalCommitted).toLocaleString()}
@@ -740,15 +927,41 @@ function HeroBar({
           </div>
         </div>
         <div className="flex-1" />
-        {myTurn && legal && (
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Button variant="dark" size="lg" disabled={acting} onClick={() => onAction('fold')} className="uppercase tracking-[0.08em]">
+        {/* Between hands the table lingers on the result until the player deals. */}
+        {game.status === 'HAND_RESULTS' && (
+          <Button
+            variant="gold"
+            size="lg"
+            onClick={onNextHand}
+            disabled={acting}
+            className="uppercase tracking-[0.08em]"
+          >
+            {acting ? 'Dealing…' : 'Deal next hand'}
+          </Button>
+        )}
+        {/* Always visible while a hand runs — disabled until it's your turn, so the game
+            controls have a fixed home and the wait state is spelled out next to them. */}
+        {legal && !me.folded && (
+          <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2.5">
+            {/* narrow screens rely on the top bar's "X is thinking…" instead */}
+            {!myTurn && (
+              <span className="mr-1 hidden text-[11px] uppercase tracking-[0.18em] text-sage sm:inline">
+                {hand.toAct ? `Waiting for ${hand.toAct}…` : 'dealing…'}
+              </span>
+            )}
+            <Button
+              variant="dark"
+              size="lg"
+              disabled={acting || !myTurn}
+              onClick={() => onAction('fold')}
+              className="uppercase tracking-[0.08em]"
+            >
               Fold
             </Button>
             <Button
               variant="moss"
               size="lg"
-              disabled={acting}
+              disabled={acting || !myTurn}
               onClick={() => onAction(legal.callAmount ? 'call' : 'check')}
               className="uppercase tracking-[0.08em]"
             >
@@ -758,7 +971,7 @@ function HeroBar({
               <Button
                 variant="gold"
                 size="lg"
-                disabled={acting}
+                disabled={acting || !myTurn}
                 onClick={() => {
                   if (!sizerOpen) setSizerOpen(true);
                   else onAction(hand.currentBet === 0 ? 'bet' : 'raise', raiseTo);
@@ -772,6 +985,11 @@ function HeroBar({
             )}
           </div>
         )}
+        {legal && me.folded && (
+          <span className="text-[11px] uppercase tracking-[0.18em] text-sage-dim">
+            You folded — watching the hand play out
+          </span>
+        )}
       </div>
     </div>
   );
@@ -781,6 +999,8 @@ function Rail({
   game,
   messages,
   open,
+  overlay,
+  queue,
   onToggle,
   onSend,
   onNudge,
@@ -791,6 +1011,10 @@ function Rail({
   game: Game;
   messages: GameMessage[];
   open: boolean;
+  /** Narrow screens: float over the table instead of squeezing it, and vanish when closed. */
+  overlay: boolean;
+  /** Speakers still queued, in order — [0] is talking now. */
+  queue: string[];
   onToggle: () => void;
   onSend: (text: string) => Promise<void>;
   onNudge: () => Promise<void>;
@@ -801,8 +1025,12 @@ function Rail({
   const endRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [eventsShown, setEventsShown] = useState(true);
+  const [eventsShown, setEventsShown] = useState(false);
   const [prodding, setProdding] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+
+  // While speakers are queued, the mic is theirs: no new message or nudge until it drains.
+  const queueBusy = queue.length > 0;
 
   // Same budget the server enforces, computed from the same message log.
   const budget = chatBudget(game, messages);
@@ -813,7 +1041,7 @@ function Rail({
   const chatStalled = chatError?.retryable === true;
 
   const prod = async (run: () => Promise<void>) => {
-    if (prodding || spent || chatStalled) return;
+    if (prodding || spent || chatStalled || queueBusy) return;
     setProdding(true);
     try {
       await run();
@@ -822,20 +1050,24 @@ function Rail({
     }
   };
 
-  const feed = messages.filter(
-    (m) =>
-      (m.recipientName === 'ALL' || m.recipientName === game.humanPlayerName) &&
-      (eventsShown || !EVENT_TYPES.includes(m.messageType)),
-  );
+  const feed = messages
+    .filter(
+      (m) =>
+        (m.recipientName === 'ALL' || m.recipientName === game.humanPlayerName) &&
+        (eventsShown || !EVENT_TYPES.includes(m.messageType)),
+    )
+    .slice(-CHAT_FEED_LIMIT);
   const eventCount = messages.filter((m) => EVENT_TYPES.includes(m.messageType)).length;
 
+  // Keyed on the last id, not length — a capped feed keeps a constant length.
+  const lastFeedId = feed[feed.length - 1]?.id;
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [feed.length]);
+    if (open) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [lastFeedId, open]);
 
   const submit = async () => {
     const text = draft.trim();
-    if (!text || sending || chatStalled) return;
+    if (!text || sending || chatStalled || queueBusy) return;
     setSending(true);
     setDraft('');
     try {
@@ -849,11 +1081,13 @@ function Rail({
 
   return (
     <aside
-      className="flex-none overflow-hidden border-l border-line bg-page transition-[width] duration-300"
-      style={{ width: open ? 320 : 52 }}
+      className={`flex-none overflow-hidden border-l border-line bg-page transition-[width] duration-300 ${
+        overlay ? 'absolute inset-y-0 right-0 z-40 shadow-theme' : ''
+      }`}
+      style={{ width: open ? 'min(320px, 88vw)' : overlay ? 0 : 52 }}
     >
       {open ? (
-        <div className="flex h-full w-80 flex-col">
+        <div className="flex h-full w-[min(320px,88vw)] flex-col">
           <div className="flex flex-none items-center justify-between px-4.5 pb-2.5 pt-4">
             <CapsLabel>Table talk</CapsLabel>
             <div className="flex items-center gap-1.5">
@@ -875,6 +1109,59 @@ function Rail({
               </button>
             </div>
           </div>
+          {/* who has the mic — click for the whole line */}
+          {queueBusy && (
+            <div className="flex-none px-4.5 pb-2.5">
+              <button
+                onClick={() => setQueueOpen((o) => !o)}
+                className="flex w-full items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2 text-left transition hover:border-gold-dark"
+              >
+                <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-gold" />
+                <span className="min-w-0 truncate text-[12px] text-cream">
+                  {queue[0]} is talking…
+                </span>
+                <span className="flex-1" />
+                {queue.length > 1 && (
+                  <span className="flex-none text-[11px] tabular-nums text-sage">
+                    +{queue.length - 1} in line
+                  </span>
+                )}
+                <svg
+                  className={`flex-none text-sage transition-transform ${queueOpen ? 'rotate-180' : ''}`}
+                  width="12"
+                  height="12"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M3.5 5.25L7 8.75L10.5 5.25" />
+                </svg>
+              </button>
+              {queueOpen && (
+                <ol className="mt-1.5 flex flex-col gap-1.5 rounded-xl border border-line bg-panel px-3 py-2.5">
+                  {queue.map((name, i) => (
+                    <li key={`${name}-${i}`} className="flex items-center gap-2 text-[12px]">
+                      <span className="w-4 flex-none text-right tabular-nums text-sage opacity-60">
+                        {i + 1}.
+                      </span>
+                      <span
+                        className="h-1.5 w-1.5 flex-none rounded-full"
+                        style={{ background: avatarColor(game, name) }}
+                      />
+                      <span className={i === 0 ? 'text-cream' : 'text-sage'}>{name}</span>
+                      {i === 0 && (
+                        <span className="text-[9px] uppercase tracking-[0.2em] text-gold">
+                          talking
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
           <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4.5 pb-3">
             {feed.map((m, i) => {
               if (EVENT_TYPES.includes(m.messageType)) {
@@ -935,8 +1222,8 @@ function Rail({
               <>
                 <button
                   onClick={() => void prod(onNudge)}
-                  disabled={prodding}
-                  className="rounded-full border border-line px-2.5 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40"
+                  disabled={prodding || queueBusy}
+                  className="rounded-full border border-line px-2.5 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40 disabled:hover:border-line disabled:hover:text-sage"
                 >
                   Nudge table
                 </button>
@@ -944,9 +1231,9 @@ function Rail({
                   <button
                     key={b.name}
                     onClick={() => void prod(() => onPickSpeaker(b.name))}
-                    disabled={prodding}
-                    title={`Ask ${b.name} to speak`}
-                    className="flex items-center gap-1.5 rounded-full border border-line px-2 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40"
+                    disabled={prodding || queueBusy}
+                    title={queueBusy ? 'The table is talking…' : `Ask ${b.name} to speak`}
+                    className="flex items-center gap-1.5 rounded-full border border-line px-2 py-1 text-[11px] text-sage hover:border-gold-dark hover:text-gold-pale disabled:opacity-40 disabled:hover:border-line disabled:hover:text-sage"
                   >
                     <span
                       className="h-1.5 w-1.5 rounded-full"
@@ -968,18 +1255,21 @@ function Rail({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void submit()}
+              disabled={queueBusy}
               placeholder={
                 chatStalled
                   ? 'Retry the stalled reply first…'
-                  : spent
-                    ? 'The table is done talking…'
-                    : 'Say something…'
+                  : queueBusy
+                    ? `${queue[0]} is talking…`
+                    : spent
+                      ? 'The table is done talking…'
+                      : 'Say something…'
               }
-              className="min-w-0 flex-1 rounded-full border border-line bg-transparent px-3.5 py-2 text-[13px] text-cream outline-none placeholder:text-sage focus:border-gold"
+              className="min-w-0 flex-1 rounded-full border border-line bg-transparent px-3.5 py-2 text-[13px] text-cream outline-none placeholder:text-sage focus:border-gold disabled:opacity-50"
             />
             <button
               onClick={() => void submit()}
-              disabled={sending || chatStalled || !draft.trim()}
+              disabled={sending || chatStalled || queueBusy || !draft.trim()}
               className="h-[34px] w-[34px] flex-none rounded-full border border-[#3f4a35] bg-[rgba(216,178,90,0.14)] text-sm text-cream hover:border-gold disabled:opacity-50"
             >
               ›

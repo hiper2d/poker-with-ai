@@ -115,8 +115,8 @@ export interface ChatBudget {
 }
 
 /**
- * What the table can still afford to say. Free-tier games run on our keys, so they get a
- * tighter allowance than games where the player brought their own.
+ * What the table can still afford to say. Free-tier games get a tighter allowance than
+ * paid-tier games, where every call is billed to the player's balance anyway.
  */
 export function chatBudget(game: Game, messages: GameMessage[]): ChatBudget {
   const limits =

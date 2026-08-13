@@ -1,14 +1,12 @@
 /**
  * The single source of truth for which models a user may pick and how bot models are
  * dealt, per tier. Pure functions over config — importable from client components and
- * server actions alike (no secrets: it only ever sees key *names*, never values).
+ * server actions alike.
  *
  * Tiers:
- * - free: platform keys; price-banded model subset with per-game bot caps (config/tiers.ts).
- * - api:  the user's own keys; only models whose key they have provided.
- * - paid: platform keys; full catalog, billed with markup (balance flow not built yet).
+ * - free: price-banded model subset with per-game bot caps (config/tiers.ts).
+ * - paid: full catalog, billed with markup from the prepaid balance.
  */
-import type { ApiKeyMap } from '@/config/models';
 import { SUPPORTED_MODELS } from '@/config/models';
 import { getFreeTierPolicy } from '@/config/tiers';
 import type { UserTier } from '@/models/user';
@@ -35,25 +33,6 @@ export function getCandidateModelIdsForTier(tier: UserTier): string[] {
   return SUPPORTED_MODELS.filter((m) => getFreeTierPolicy(m.id).available).map((m) => m.id);
 }
 
-/** Key names with a non-empty value. Server-side helper — clients get names, not maps. */
-export function getProvidedApiKeyNames(apiKeys: ApiKeyMap | null | undefined): Set<string> {
-  const provided = new Set<string>();
-  for (const [name, value] of Object.entries(apiKeys ?? {})) {
-    if (typeof value === 'string' && value.trim() !== '') provided.add(name);
-  }
-  return provided;
-}
-
-/** Models the user may actually select given tier and (api tier only) provided key names. */
-export function getSelectableModelIds(
-  tier: UserTier,
-  providedKeyNames: ReadonlySet<string>,
-): string[] {
-  const candidates = getCandidateModelIdsForTier(tier);
-  if (tier !== 'api') return candidates;
-  return candidates.filter((id) => providedKeyNames.has(requireModel(id).apiKeyName));
-}
-
 /** Display-ready picker entry. Pickers map this to UI and never re-implement tier rules. */
 export interface ModelPickerOption {
   id: string;
@@ -65,15 +44,11 @@ export interface ModelPickerOption {
  * What every model picker shows.
  * - free: full catalog with capacity suffixes; unavailable models disabled (visible so the
  *   user sees what upgrading unlocks).
- * - api: only models whose key is provided.
  * - paid: full catalog.
  */
-export function getModelPickerOptions(
-  tier: UserTier,
-  providedKeyNames: ReadonlySet<string>,
-): ModelPickerOption[] {
+export function getModelPickerOptions(tier: UserTier): ModelPickerOption[] {
   if (tier !== 'free') {
-    return getSelectableModelIds(tier, providedKeyNames).map((id) => ({ id, disabled: false }));
+    return getCandidateModelIdsForTier(tier).map((id) => ({ id, disabled: false }));
   }
   return SUPPORTED_MODELS.map((m) => {
     const limit = getPerGameModelLimit(m.id, 'free');
@@ -101,7 +76,7 @@ export function deckCapacity(modelIds: string[], tier: UserTier, gmModelId?: str
 
 /**
  * Deals bot models from the selected deck, shuffled, respecting free-tier per-model caps
- * (cycling freely on other tiers). Throws when free-tier capacity can't cover botCount.
+ * (cycling freely on the paid tier). Throws when free-tier capacity can't cover botCount.
  */
 export function dealModels(
   modelIds: string[],
@@ -146,22 +121,9 @@ export function validateModelUsageForTier(
   tier: UserTier,
   gmModelId: string,
   botModelIds: string[],
-  providedKeyNames: ReadonlySet<string>,
 ): void {
   const all = [gmModelId, ...botModelIds];
   for (const id of all) requireModel(id);
-
-  if (tier === 'api') {
-    for (const id of all) {
-      const config = requireModel(id);
-      if (!providedKeyNames.has(config.apiKeyName)) {
-        throw new Error(
-          `${config.displayName} requires the ${config.apiKeyName} key. Add it on your Profile page.`,
-        );
-      }
-    }
-    return;
-  }
   if (tier !== 'free') return; // paid: full catalog on platform keys
 
   const usage = new Map<string, number>();

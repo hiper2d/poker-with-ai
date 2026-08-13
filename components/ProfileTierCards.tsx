@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateUserTier } from '@/app/actions/user-actions';
 import { Button, CapsLabel, Panel } from '@/components/ui';
+import { FREE_TIER_LIMITS } from '@/config/tiers';
 import type { UserTier } from '@/models/user';
 
 interface TierInfo {
@@ -13,7 +14,6 @@ interface TierInfo {
   costNote: string;
   blurb: string;
   feats: string[];
-  comingSoon?: boolean;
 }
 
 const TIERS: TierInfo[] = [
@@ -27,18 +27,7 @@ const TIERS: TierInfo[] = [
       'Nothing to bring or configure',
       'Price-banded model subset',
       'Per-model caps: unlimited, 3, or 1 bot per game',
-    ],
-  },
-  {
-    id: 'api',
-    name: 'Your keys',
-    cost: 'At cost',
-    costNote: 'billed by providers',
-    blurb: 'Bring your own API keys and pay the providers directly.',
-    feats: [
-      'Full catalog for every key you add',
-      'No per-game bot caps',
-      'Keys stay in your profile, used server-side only',
+      `Up to ${FREE_TIER_LIMITS.GAMES_PER_CALENDAR_DAY} games per calendar day`,
     ],
   },
   {
@@ -47,8 +36,12 @@ const TIERS: TierInfo[] = [
     cost: 'Pay as you go',
     costNote: 'cost + 30%',
     blurb: 'Whole catalog on platform keys, billed from a prepaid balance.',
-    feats: ['Full model catalog', 'No per-game limits', 'Prepaid balance, top up anytime'],
-    comingSoon: true,
+    feats: [
+      'Full model catalog',
+      'No per-game or daily limits',
+      'Actual cost + 30% deducted from balance per call',
+      'Games are gated on a positive balance',
+    ],
   },
 ];
 
@@ -75,7 +68,7 @@ export default function ProfileTierCards({ initialTier }: { initialTier: UserTie
       {error && (
         <p className="r-md border border-loss bg-panel px-4 py-3 text-sm text-loss">{error}</p>
       )}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {TIERS.map((info) => {
           const isCurrent = tier === info.id;
           return (
@@ -108,10 +101,6 @@ export default function ProfileTierCards({ initialTier }: { initialTier: UserTie
               <div className="mt-auto pt-2">
                 {isCurrent ? (
                   <div className="text-xs uppercase tracking-[0.18em] text-sage-dim">Active</div>
-                ) : info.comingSoon ? (
-                  <Button variant="dark" disabled className="w-full opacity-60">
-                    Coming soon
-                  </Button>
                 ) : (
                   <Button
                     variant="moss"

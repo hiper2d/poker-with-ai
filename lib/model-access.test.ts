@@ -4,9 +4,9 @@ import {
   dealModels,
   deckCapacity,
   FREE_TIER_UNLIMITED,
+  getCandidateModelIdsForTier,
   getModelPickerOptions,
   getPerGameModelLimit,
-  getSelectableModelIds,
   validateModelUsageForTier,
 } from './model-access';
 
@@ -37,8 +37,8 @@ describe('free-tier price banding', () => {
 });
 
 describe('getPerGameModelLimit', () => {
-  it('is unlimited on non-free tiers', () => {
-    expect(getPerGameModelLimit('claude', 'api')).toBe(FREE_TIER_UNLIMITED);
+  it('is unlimited on the paid tier', () => {
+    expect(getPerGameModelLimit('claude', 'paid')).toBe(FREE_TIER_UNLIMITED);
     expect(getPerGameModelLimit('fugu', 'paid')).toBe(FREE_TIER_UNLIMITED);
   });
 
@@ -47,28 +47,35 @@ describe('getPerGameModelLimit', () => {
   });
 });
 
-describe('getSelectableModelIds', () => {
-  it('filters api tier by provided key names', () => {
-    const ids = getSelectableModelIds('api', new Set(['ANTHROPIC_API_KEY', 'GROK_API_KEY']));
-    expect(ids.sort()).toEqual(['claude', 'claude-fable', 'claude-haiku', 'claude-opus', 'grok']);
-  });
-
-  it('ignores keys on free tier and excludes unavailable models', () => {
-    const ids = getSelectableModelIds('free', new Set());
+describe('getCandidateModelIdsForTier', () => {
+  it('excludes unavailable models on the free tier', () => {
+    const ids = getCandidateModelIdsForTier('free');
     expect(ids).not.toContain('claude');
     expect(ids).not.toContain('kimi');
     expect(ids).not.toContain('fugu');
     expect(ids).toContain('deepseek');
   });
+
+  it('offers the full catalog on paid', () => {
+    const ids = getCandidateModelIdsForTier('paid');
+    expect(ids).toContain('claude');
+    expect(ids).toContain('kimi');
+    expect(ids).toContain('fugu');
+  });
 });
 
 describe('getModelPickerOptions', () => {
   it('shows the full catalog on free tier with unavailable models disabled', () => {
-    const options = getModelPickerOptions('free', new Set());
+    const options = getModelPickerOptions('free');
     const claude = options.find((o) => o.id === 'claude');
     expect(claude?.disabled).toBe(true);
     const deepseek = options.find((o) => o.id === 'deepseek');
     expect(deepseek).toEqual({ id: 'deepseek', disabled: false, suffix: '(3× per game)' });
+  });
+
+  it('enables everything on paid', () => {
+    const options = getModelPickerOptions('paid');
+    expect(options.every((o) => !o.disabled)).toBe(true);
   });
 });
 
@@ -77,13 +84,13 @@ describe('deckCapacity', () => {
     // deepseek 3 + gpt 1 = 4; GM on gpt eats gpt's only slot → 3
     expect(deckCapacity(['deepseek', 'gpt'], 'free')).toBe(4);
     expect(deckCapacity(['deepseek', 'gpt'], 'free', 'gpt')).toBe(3);
-    expect(deckCapacity(['deepseek'], 'api')).toBe(FREE_TIER_UNLIMITED);
+    expect(deckCapacity(['deepseek'], 'paid')).toBe(FREE_TIER_UNLIMITED);
   });
 });
 
 describe('dealModels', () => {
-  it('cycles freely on non-free tiers', () => {
-    const dealt = dealModels(['claude'], 5, 'api');
+  it('cycles freely on the paid tier', () => {
+    const dealt = dealModels(['claude'], 5, 'paid');
     expect(dealt).toEqual(['claude', 'claude', 'claude', 'claude', 'claude']);
   });
 
@@ -104,28 +111,19 @@ describe('dealModels', () => {
 });
 
 describe('validateModelUsageForTier', () => {
-  it('requires keys per model on the api tier', () => {
-    expect(() =>
-      validateModelUsageForTier('api', 'claude', ['grok'], new Set(['ANTHROPIC_API_KEY'])),
-    ).toThrow(/GROK_API_KEY/);
-    expect(() =>
-      validateModelUsageForTier('api', 'claude', ['grok'], new Set(['ANTHROPIC_API_KEY', 'GROK_API_KEY'])),
-    ).not.toThrow();
-  });
-
   it('counts the GM against free-tier caps', () => {
     // gpt capped at 1: GM takes it, the bot copy overflows
-    expect(() => validateModelUsageForTier('free', 'gpt', ['gpt'], new Set())).toThrow(/once/);
-    expect(() => validateModelUsageForTier('free', 'deepseek', ['deepseek', 'deepseek'], new Set())).not.toThrow();
+    expect(() => validateModelUsageForTier('free', 'gpt', ['gpt'])).toThrow(/once/);
+    expect(() => validateModelUsageForTier('free', 'deepseek', ['deepseek', 'deepseek'])).not.toThrow();
   });
 
   it('rejects free-tier-unavailable models', () => {
-    expect(() => validateModelUsageForTier('free', 'deepseek', ['claude'], new Set())).toThrow(
+    expect(() => validateModelUsageForTier('free', 'deepseek', ['claude'])).toThrow(
       /not available on the free tier/,
     );
   });
 
   it('allows the full catalog on paid', () => {
-    expect(() => validateModelUsageForTier('paid', 'claude', ['fugu', 'kimi'], new Set())).not.toThrow();
+    expect(() => validateModelUsageForTier('paid', 'claude', ['fugu', 'kimi'])).not.toThrow();
   });
 });

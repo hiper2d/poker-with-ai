@@ -13,8 +13,8 @@ export function freshDeck(): Card[] {
   return deck;
 }
 
-/** Fisher–Yates with crypto randomness. */
-export function shuffle(deck: Card[]): Card[] {
+/** Fisher–Yates with crypto randomness. Generic: shuffles cards, seats, speakers alike. */
+export function shuffle<T>(deck: T[]): T[] {
   const cards = [...deck];
   const random = new Uint32Array(cards.length);
   crypto.getRandomValues(random);

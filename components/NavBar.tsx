@@ -1,25 +1,36 @@
 import Link from 'next/link';
 import { auth, signIn, signOut } from '@/auth';
+import NavMenu from '@/components/NavMenu';
 import ThemeSwitcher from '@/components/ThemeSwitcher';
 import { Avatar } from '@/components/ui';
+import { COLLECTIONS, db } from '@/lib/firebase/server';
+import { coerceTier } from '@/models/user';
 
 const NAV_LINKS = [
   { href: '/games', label: 'Tables' },
   { href: '/games/new', label: 'Host' },
+  { href: '/models', label: 'Models' },
+  { href: '/rules', label: 'Rules' },
   { href: '/profile', label: 'Profile' },
 ];
 
 export default async function NavBar() {
   const session = await auth();
   const initial = (session?.user?.name ?? session?.user?.email ?? '?')[0]?.toUpperCase();
+  // Tier badge next to the avatar (werewolf's navbar pattern) — a link to the plan cards.
+  const tier = session?.user?.email
+    ? coerceTier((await db.collection(COLLECTIONS.users).doc(session.user.email).get()).data()?.tier)
+    : null;
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-page">
-      <div className="mx-auto flex max-w-6xl items-center gap-5 px-5 py-3">
+      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:gap-5 sm:px-5">
         <Link href="/" className="flex flex-none items-baseline gap-2.5">
-          <span className="font-serif text-[26px] tracking-[0.04em] text-gold-pale">Poker with AI</span>
-          <span className="label-caps text-[10px]">No-limit hold&rsquo;em</span>
+          <span className="font-serif text-[22px] tracking-[0.04em] text-gold-pale sm:text-[26px]">Poker with AI</span>
+          {/* sacrificed on narrow screens so the session buttons stay on screen */}
+          <span className="label-caps hidden text-[10px] md:inline">No-limit hold&rsquo;em</span>
         </Link>
-        <nav className="flex flex-1 gap-1 overflow-x-auto">
+        {/* wide screens: links inline; narrow: grouped into the Menu dropdown */}
+        <nav className="hidden flex-1 gap-1 overflow-x-auto md:flex">
           {NAV_LINKS.map((l) => (
             <Link
               key={l.href}
@@ -30,9 +41,21 @@ export default async function NavBar() {
             </Link>
           ))}
         </nav>
+        <div className="flex-1 md:hidden" />
+        <NavMenu links={NAV_LINKS} />
         <ThemeSwitcher />
         {session?.user ? (
           <div className="flex flex-none items-center gap-3">
+            {tier && (
+              <Link
+                href="/profile"
+                className={`hidden rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] sm:inline ${
+                  tier === 'paid' ? 'border-gold text-gold-pale' : 'border-line text-sage'
+                }`}
+              >
+                {tier}
+              </Link>
+            )}
             <Avatar name={initial ?? '?'} size="sm" />
             <form
               action={async () => {

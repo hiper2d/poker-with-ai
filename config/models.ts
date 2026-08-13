@@ -18,8 +18,8 @@ export type ApiKeyName =
 export type ApiKeyMap = Partial<Record<ApiKeyName, string>>;
 
 /**
- * Dev/local fallback: when a key is missing from poker_users/{email}.apiKeys, it is read
- * from these env vars (same naming convention as werewolf's .env).
+ * Dev/local fallback: when a key is missing from the shared config/freeTierApiKeys doc,
+ * it is read from these env vars (same naming convention as werewolf's .env).
  */
 export const ENV_KEY_FALLBACKS: Record<ApiKeyName, string> = {
   ANTHROPIC_API_KEY: 'ANTHROPIC_K',
@@ -219,9 +219,9 @@ export const SUPPORTED_MODELS: ModelConfig[] = [
   // Grok
   {
     id: 'grok',
-    displayName: 'Grok 4.5',
+    displayName: 'Grok 4.6',
     agentKind: 'openai-compatible',
-    modelApiName: 'grok-4.5',
+    modelApiName: 'grok-4.6',
     apiKeyName: 'GROK_API_KEY',
     baseUrl: 'https://api.x.ai/v1',
     hasThinking: true,

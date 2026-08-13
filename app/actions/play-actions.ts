@@ -34,7 +34,7 @@ import type {
 import { GAME_STATES, PIT_BOSS, RECIPIENT_ALL } from '@/models/game';
 import { ERROR_FIELD, laneBlocked, laneError, RETRY_FIELD } from '@/lib/game/retry';
 import { getApiKeysForUser, getTierAndKeys } from '@/lib/api-keys';
-import { getProvidedApiKeyNames, validateModelUsageForTier } from '@/lib/model-access';
+import { validateModelUsageForTier } from '@/lib/model-access';
 
 export interface PlayResult {
   game: Game;
@@ -86,7 +86,7 @@ export const advanceGame = gameAction(
           break;
         }
         if (hand.complete) {
-          await settleAndRecord(game);
+          chatQueued = await settleAndRecord(game);
           break;
         }
         const bot = game.bots.find((b) => b.name === hand.toAct);
@@ -151,8 +151,8 @@ export const advanceGame = gameAction(
 
       case GAME_STATES.HAND_RESULTS: {
         const messages = await fetchMessages(game.id);
-        const next = nextState(game, messages);
-        if (next === GAME_STATES.GAME_OVER) {
+        if (nextState(game, messages) === GAME_STATES.GAME_OVER) {
+          // A decided game doesn't wait on a button.
           game.status = GAME_STATES.GAME_OVER;
           const champion = game.seats.find((s) => s.status === 'active');
           await addMessageToGame(game.id, {
@@ -162,12 +162,10 @@ export const advanceGame = gameAction(
             messageType: 'GAME_STORY',
             handNumber: game.handNumber,
           });
-        } else if (next === GAME_STATES.COMPACTION) {
-          // Between hands is when bots tidy their memory.
-          game.gameQueue = buildCompactionEvents(game, messages);
-          game.status = GAME_STATES.COMPACTION;
         } else {
-          await startNextHand(game);
+          // The pot is paid out; the table lingers so the player can read the result and
+          // hear the reactions. `nextHand` (the "Deal next hand" button) moves the game on.
+          progressed = false;
         }
         break;
       }
@@ -245,12 +243,14 @@ export const advanceGame = gameAction(
 
 export interface ChatResult {
   messages: GameMessage[];
-  /** Chat events still queued after this step. */
-  remaining: number;
+  /** Who is still queued to speak after this step, in order — [0] is talking now. */
+  queue: string[];
   progressed: boolean;
   /** The chat lane's error: non-null means the lane is stopped until the player retries. */
   chatError: GameErrorState | null;
 }
+
+const actorsOf = (queue: ChatEvent[]): string[] => queue.map((e) => e.actor);
 
 /**
  * The chat pump target: processes ONE chat-queue event per call. Fully independent of
@@ -265,7 +265,7 @@ export const advanceChat = gameAction(
   if (laneBlocked(game, 'chat')) {
     return {
       messages: await fetchMessages(game.id),
-      remaining: game.chatQueue.length,
+      queue: actorsOf(game.chatQueue),
       progressed: false,
       chatError: laneError(game, 'chat'),
     };
@@ -274,7 +274,7 @@ export const advanceChat = gameAction(
   if (!event) {
     return {
       messages: await fetchMessages(game.id),
-      remaining: 0,
+      queue: [],
       progressed: false,
       chatError: null,
     };
@@ -287,23 +287,28 @@ export const advanceChat = gameAction(
     try {
       if (event.kind === 'WELCOME_INTRO') {
         const intro = await botIntro(game, bot, apiKeys);
-        await addMessageToGame(game.id, {
-          recipientName: RECIPIENT_ALL,
-          authorName: bot.name,
-          msg: intro,
-          messageType: 'BOT_INTRO',
-          handNumber: 0,
-        });
+        // Empty = the reply held nothing speakable (a leaked JSON decision); skip silently.
+        if (intro) {
+          await addMessageToGame(game.id, {
+            recipientName: RECIPIENT_ALL,
+            authorName: bot.name,
+            msg: intro,
+            messageType: 'BOT_INTRO',
+            handNumber: 0,
+          });
+        }
       } else {
         const messages = await fetchMessages(game.id);
         const reply = await botChatReply(game, bot, chatVisible(messages), apiKeys, event.cause);
-        await addMessageToGame(game.id, {
-          recipientName: RECIPIENT_ALL,
-          authorName: bot.name,
-          msg: reply,
-          messageType: 'BOT_ANSWER',
-          handNumber: game.handNumber,
-        });
+        if (reply) {
+          await addMessageToGame(game.id, {
+            recipientName: RECIPIENT_ALL,
+            authorName: bot.name,
+            msg: reply,
+            messageType: 'BOT_ANSWER',
+            handNumber: game.handNumber,
+          });
+        }
       }
     } catch (error) {
       if (!isAiCallError(error)) throw error;
@@ -311,15 +316,15 @@ export const advanceChat = gameAction(
       const chatError = await ctx.recordFailure('chat', aiFailure(error, 'advanceChat', true));
       return {
         messages: await fetchMessages(game.id),
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError,
       };
     }
   }
 
-  const remaining = await dequeueChat(game.id);
-  return { messages: await fetchMessages(game.id), remaining, progressed: true, chatError: null };
+  const queue = await dequeueChat(game.id);
+  return { messages: await fetchMessages(game.id), queue: actorsOf(queue), progressed: true, chatError: null };
   },
 );
 
@@ -341,7 +346,7 @@ export const sendChatMessage = gameAction(
       // A queued speaker still needs retrying; a new message would jump the line.
       return {
         messages: await fetchMessages(game.id),
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError: laneError(game, 'chat'),
       };
@@ -365,7 +370,7 @@ export const sendChatMessage = gameAction(
       // Out of chat budget: the message still lands (bots read it as context on their
       // next turn), the table just doesn't answer. The UI explains the silence.
       ctx.logger.info('chat budget exhausted — no responders queued', { budget });
-      return { messages, remaining: game.chatQueue.length, progressed: false, chatError: null };
+      return { messages, queue: actorsOf(game.chatQueue), progressed: false, chatError: null };
     }
 
     const apiKeys = await getApiKeysForUser(game.createdBy);
@@ -377,7 +382,7 @@ export const sendChatMessage = gameAction(
       }, 'router');
       return {
         messages: await fetchMessages(game.id),
-        remaining: queue.length,
+        queue: actorsOf(queue),
         progressed: true,
         chatError: null,
       };
@@ -387,7 +392,7 @@ export const sendChatMessage = gameAction(
       if (!isAiCallError(error)) throw error;
       return {
         messages: await fetchMessages(game.id),
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError: await ctx.recordFailure('chat', aiFailure(error, 'sendChatMessage', game.chatQueue.length > 0)),
       };
@@ -407,7 +412,7 @@ export const continueChat = gameAction(
     if (retryPending(game)) {
       return {
         messages: await fetchMessages(game.id),
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError: laneError(game, 'chat'),
       };
@@ -418,7 +423,7 @@ export const continueChat = gameAction(
     const messages = await fetchMessages(game.id);
     const budget = chatBudget(game, messages);
     if (budget.remaining === 0 || game.chatQueue.length > 0) {
-      return { messages, remaining: game.chatQueue.length, progressed: false, chatError: null };
+      return { messages, queue: actorsOf(game.chatQueue), progressed: false, chatError: null };
     }
 
     const apiKeys = await getApiKeysForUser(game.createdBy);
@@ -430,7 +435,7 @@ export const continueChat = gameAction(
       }, 'router');
       return {
         messages: await fetchMessages(game.id),
-        remaining: queue.length,
+        queue: actorsOf(queue),
         progressed: true,
         chatError: null,
       };
@@ -438,7 +443,7 @@ export const continueChat = gameAction(
       if (!isAiCallError(error)) throw error;
       return {
         messages: await fetchMessages(game.id),
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError: await ctx.recordFailure('chat', aiFailure(error, 'continueChat', game.chatQueue.length > 0)),
       };
@@ -466,7 +471,7 @@ export const selectChatSpeakers = gameAction(
     if (!speakers.length || retryPending(game)) {
       return {
         messages,
-        remaining: game.chatQueue.length,
+        queue: actorsOf(game.chatQueue),
         progressed: false,
         chatError: laneError(game, 'chat'),
       };
@@ -479,7 +484,7 @@ export const selectChatSpeakers = gameAction(
       game.id,
       speakers.map((actor) => ({ actor, kind: 'CHAT_REPLY' as const, trigger: 'manual' as const })),
     );
-    return { messages, remaining: queue.length, progressed: true, chatError: null };
+    return { messages, queue: actorsOf(queue), progressed: true, chatError: null };
   },
 );
 
@@ -513,6 +518,36 @@ export const humanAction = gameAction(
 );
 
 /**
+ * The player's "Deal next hand" click: leave HAND_RESULTS for compaction or the next deal.
+ * The GAME_OVER exit never waits for this — the pump takes it on its own.
+ */
+export const nextHand = gameAction(
+  'nextHand',
+  { expectState: [GAME_STATES.HAND_RESULTS] },
+  async (ctx: ActionContext): Promise<PlayResult> => {
+    const game = ctx.game;
+    const messages = await fetchMessages(game.id);
+    const next = nextState(game, messages);
+    if (next === GAME_STATES.COMPACTION) {
+      // Between hands is when bots tidy their memory.
+      game.gameQueue = buildCompactionEvents(game, messages);
+      game.status = GAME_STATES.COMPACTION;
+      await saveGame(game);
+    } else if (next === GAME_STATES.BETTING) {
+      await startNextHand(game);
+      await saveGame(game);
+    }
+    // next === GAME_OVER: leave the game untouched — the pump ends it on its next tick.
+    return {
+      game: sanitizeGame(game),
+      messages: await fetchMessages(game.id),
+      progressed: true,
+      gameError: laneError(game, 'game'),
+    };
+  },
+);
+
+/**
  * Retry a stopped lane — werewolf's flow exactly: clearing the error IS the retry. The
  * lane's pump wakes up and re-runs whatever step is still pending (the queue head is
  * untouched, so a failed bot speaks again), and what the clear leaves behind is a one-shot
@@ -529,12 +564,11 @@ export const retryLane = gameAction(
     if (model && error.actor) {
       // A one-shot model must still obey the tier's rules, so substitute it into the
       // seating and validate the whole table exactly as game creation would.
-      const { tier, apiKeys } = await getTierAndKeys(ctx.userEmail);
+      const { tier } = await getTierAndKeys(ctx.userEmail);
       validateModelUsageForTier(
         tier,
         error.actor === PIT_BOSS ? model : game.gameMasterAiType,
         game.bots.map((b) => (b.name === error.actor ? model : b.aiType)),
-        getProvidedApiKeyNames(apiKeys),
       );
     }
 
@@ -654,13 +688,13 @@ async function enqueueChat(gameId: string, events: ChatEvent[]): Promise<ChatEve
  * enqueueChat: a plain write of `queue.slice(1)` computed from a stale read would silently
  * swallow any reply queued while the bot was talking.
  */
-async function dequeueChat(gameId: string): Promise<number> {
+async function dequeueChat(gameId: string): Promise<ChatEvent[]> {
   const ref = db.collection(COLLECTIONS.games).doc(gameId);
   return db.runTransaction(async (tx) => {
     const snapshot = await tx.get(ref);
     const queue = ((snapshot.data()?.chatQueue as ChatEvent[]) ?? []).slice(1);
     tx.update(ref, { chatQueue: queue });
-    return queue.length;
+    return queue;
   });
 }
 
@@ -680,7 +714,9 @@ async function startNextHand(game: Game): Promise<void> {
   });
 }
 
-async function settleAndRecord(game: Game): Promise<void> {
+/** Pay out the pot, record the hand, and queue the winner's/loser's table reactions.
+ *  Returns the chat-queue length when reactions were queued, so the client wakes the chat pump. */
+async function settleAndRecord(game: Game): Promise<number | undefined> {
   const hand = game.hand!;
   const result = settleHand(hand);
 
@@ -692,6 +728,13 @@ async function settleAndRecord(game: Game): Promise<void> {
       seat.eliminatedInHand = game.handNumber;
     }
   }
+
+  // A showdown shows every live hand, winners and losers alike — folded pots show nothing.
+  const live = hand.players.filter((p) => !p.folded && p.holeCards);
+  const showdown =
+    live.length > 1
+      ? live.map((p) => ({ name: p.name, cards: [...(p.holeCards ?? [])] }))
+      : undefined;
 
   const record: HandRecord = {
     handNumber: game.handNumber,
@@ -708,6 +751,7 @@ async function settleAndRecord(game: Game): Promise<void> {
     eliminated: game.seats
       .filter((s) => s.eliminatedInHand === game.handNumber)
       .map((s) => s.name),
+    ...(showdown ? { showdown } : {}),
   };
   game.handHistory = [...game.handHistory, record];
   game.status = GAME_STATES.HAND_RESULTS;
@@ -721,13 +765,42 @@ async function settleAndRecord(game: Game): Promise<void> {
   const busted = record.eliminated.length
     ? ` ${record.eliminated.join(', ')} ${record.eliminated.length > 1 ? 'are' : 'is'} out.`
     : '';
+  // Losing showdown hands go on the record too — the table (and every bot's reads) sees them.
+  const winnerSet = new Set(result.winners.map((w) => w.name));
+  const shows = (showdown ?? [])
+    .filter((s) => !winnerSet.has(s.name))
+    .map((s) => `${s.name} shows (${s.cards.join(' ')})`);
+  const resultText = `${lines.join('; ')}.${shows.length ? ` ${shows.join('; ')}.` : ''}${busted}`;
   await addMessageToGame(game.id, {
     recipientName: RECIPIENT_ALL,
     authorName: 'GM',
-    msg: `${lines.join('; ')}.${busted}`,
+    msg: resultText,
     messageType: 'HAND_RESULT',
     handNumber: game.handNumber,
   });
+
+  // The result is a chat trigger of its own: the winning bot gloats, the hardest-hit bot
+  // vents (a bot that just busted still gets its parting words). No Pit Boss call — who
+  // reacts to a result is deterministic. Budgeted like every other reply.
+  const botNames = new Set(game.bots.map((b) => b.name));
+  const winner = result.winners.map((w) => w.name).find((n) => botNames.has(n));
+  const loser = Object.entries(result.stackDeltas)
+    .filter(([name, delta]) => delta < 0 && botNames.has(name) && !winnerSet.has(name))
+    .sort(([, a], [, b]) => a - b)[0]?.[0];
+  const budget = chatBudget(game, await fetchMessages(game.id));
+  const reactors = [winner, loser].filter((n): n is string => !!n).slice(0, budget.remaining);
+  if (!reactors.length) return undefined;
+  const queue = await enqueueChat(
+    game.id,
+    reactors.map((actor) => ({
+      actor,
+      kind: 'CHAT_REPLY' as const,
+      trigger: 'result' as const,
+      cause: { author: 'GM', text: resultText },
+    })),
+  );
+  game.chatQueue = queue; // keep the in-memory copy fresh — the client mirrors it
+  return queue.length;
 }
 
 function actionText(name: string, action: BettingAction): string {

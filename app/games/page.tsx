@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
 import { listGames } from '@/app/actions/game-actions';
+import DeleteGameButton from '@/components/DeleteGameButton';
 
 export default async function GamesPage() {
   const session = await auth();
@@ -42,11 +43,12 @@ export default async function GamesPage() {
                 className="flex flex-col overflow-hidden r-md shadow-theme border border-line bg-panel transition hover:border-gold"
               >
                 <div className="border-b border-line px-4.5 py-4">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-serif text-2xl text-cream">{game.theme}</span>
-                    <span className="rounded-full border border-line px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-sage">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate font-serif text-2xl text-cream">{game.theme}</span>
+                    <span className="flex-none rounded-full border border-line px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-sage">
                       {game.status.replaceAll('_', ' ').toLowerCase()}
                     </span>
+                    <DeleteGameButton gameId={game.id} theme={game.theme} />
                   </div>
                   <div className="mt-1 truncate text-xs text-sage-dim">{game.scene}</div>
                 </div>

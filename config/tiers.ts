@@ -15,6 +15,11 @@
  */
 import { MODEL_PRICING } from './pricing';
 
+/** Hard free-tier caps beyond the per-model bands (werewolf's FREE_TIER_LIMITS). */
+export const FREE_TIER_LIMITS = {
+  GAMES_PER_CALENDAR_DAY: 5,
+} as const;
+
 export const FREE_TIER_OUTPUT_PRICE_BANDS = {
   UNLIMITED_MAX: 2,
   LIMITED_MAX: 6,
@@ -37,6 +42,11 @@ const HYBRID_THINKING_IDS = new Set([
   'qwen-flash',
   'minimax',
 ]);
+
+/** Whether the ×FREE_TIER_THINKING_COST_FACTOR reasoning multiplier applies when banding. */
+export function isHybridThinkingModel(modelId: string): boolean {
+  return HYBRID_THINKING_IDS.has(modelId);
+}
 
 export interface FreeTierPolicy {
   available: boolean;

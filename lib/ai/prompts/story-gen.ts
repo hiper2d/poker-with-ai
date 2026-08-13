@@ -32,5 +32,5 @@ ${personaList}
 }
 
 export function buildStoryGenUserPrompt(theme: string, humanName: string, botCount: number): string {
-  return `Theme: ${theme}\nHuman player: ${humanName}\nCreate exactly ${botCount} bot characters.\nFill in the scene field first, then the players.`;
+  return `Theme: ${theme}\nHuman player: ${humanName}\nCreate exactly ${botCount} bot characters. ${humanName} is already at the table — do NOT include them in players.\nFill in the scene field first, then the players.`;
 }

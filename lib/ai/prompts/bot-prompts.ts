@@ -137,8 +137,11 @@ export function buildChatReplyPrompt(
     .map((m) => `${m.authorName}: ${typeof m.msg === 'string' ? m.msg : ''}`)
     .filter((l) => !l.endsWith(': '))
     .join('\n');
+  // 'GM' authors game facts (a hand result), not table talk — react to it, don't answer it.
   const prompt = cause
-    ? `You are answering ${cause.author}, who just said: "${cause.text}"`
+    ? cause.author === 'GM'
+      ? `The hand just ended: ${cause.text} React to the result in character — gloat, vent, needle a rival, or wave it off.`
+      : `You are answering ${cause.author}, who just said: "${cause.text}"`
     : `The table has gone quiet. Say something that keeps the conversation alive.`;
   return `## Recent table talk
 ${chat || '(quiet table)'}

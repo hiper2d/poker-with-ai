@@ -4,7 +4,12 @@ No-limit hold'em against AI opponents who talk, tilt, and remember how you playe
 hand. Pick any theme — Harry Potter, Dune, 1920s Chicago — and a game master model writes
 the scene and deals you a table of in-character rivals, each one played by a different LLM.
 
-![Game room](docs/screenshots/game-room.png)
+![Game room — mid-hand, the table talking](docs/screenshots/kings.png)
+
+Hands pause on the result so you can read the showdown — and hear the winner gloat and the
+loser vent — before you deal the next one:
+
+![Hand results — showdown revealed on the felt](docs/screenshots/kings-win.png)
 
 ## What makes it fun
 
@@ -33,9 +38,9 @@ model with speed/cost tags; the game master gets its own pick.
 
 ![Host a table](docs/screenshots/host-table.png)
 
-Three account tiers (werewolf-style): **Free** plays on shared platform keys with
-price-banded per-model caps, **Your keys** unlocks the full catalog for every provider key
-you add, and **Paid** (prepaid balance) is coming soon.
+Two account tiers (werewolf-style): **Free** plays on shared platform keys with
+price-banded per-model caps and a daily game limit, **Paid** unlocks the full catalog and
+bills model cost + 30% against a prepaid balance (Stripe top-ups coming soon).
 
 ![Profile and tiers](docs/screenshots/profile-tiers.png)
 
@@ -70,7 +75,8 @@ npm run dev            # http://localhost:3000
 ```
 
 You need a Firebase project (Firestore) and at least one OAuth app (GitHub or Google) for
-sign-in. Provider API keys can live in `.env` for development or in your profile in-app.
+sign-in. Provider API keys live in the shared `config/freeTierApiKeys` Firestore doc, with
+`.env` fallbacks for development.
 
 ```bash
 npx vitest run         # engine, state machine, tiers, memory, chat router — no network

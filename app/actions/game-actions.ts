@@ -9,22 +9,81 @@ import {
   StoryGenSchema,
 } from '@/lib/ai/prompts/story-gen';
 import { addMessageToGame } from '@/lib/actions/messages';
+import { shuffle } from '@/lib/engine/deck';
 import { COLLECTIONS, db, stripUndefined } from '@/lib/firebase/server';
 import { sanitizeGame } from '@/lib/game/sanitize';
 import type { Bot, Game, GameMessage, Seat } from '@/models/game';
 import { GAME_STATES, RECIPIENT_ALL } from '@/models/game';
 import type { GamePreview, GamePreviewInput } from '@/models/preview';
 import { getTierAndKeys } from '@/lib/api-keys';
-import {
-  dealModels,
-  getProvidedApiKeyNames,
-  validateModelUsageForTier,
-} from '@/lib/model-access';
+import { dealModels, validateModelUsageForTier } from '@/lib/model-access';
+import { FREE_TIER_LIMITS } from '@/config/tiers';
+import { PAID_TIER_MARKUP, computeCostUsd } from '@/config/pricing';
+import { deductBalance, getUserBalance, updateUserMonthlySpending } from '@/lib/user-balance';
+import { USER_TIERS, type UserTier } from '@/models/user';
 
 async function requireEmail(): Promise<string> {
   const session = await auth();
   if (!session?.user?.email) throw new Error('Not authenticated');
   return session.user.email;
+}
+
+/**
+ * Tier gates before any tokens are spent (werewolf's game-creation gates):
+ * - paid: a positive balance — every model call after this bills against it.
+ * - free: at most FREE_TIER_LIMITS.GAMES_PER_CALENDAR_DAY games since 00:00 UTC.
+ */
+async function assertTierAllowsNewGame(email: string, tier: UserTier): Promise<void> {
+  if (tier === USER_TIERS.PAID) {
+    const balance = await getUserBalance(email);
+    if (balance <= 0) {
+      throw new Error(
+        'Insufficient balance. Please add funds on your profile page before starting a game.',
+      );
+    }
+    return;
+  }
+  const startOfTodayUTC = new Date();
+  startOfTodayUTC.setUTCHours(0, 0, 0, 0);
+  const snapshot = await db.collection(COLLECTIONS.games).where('createdBy', '==', email).get();
+  const today = snapshot.docs.filter(
+    (d) => (d.data().createdAt ?? 0) >= startOfTodayUTC.getTime(),
+  ).length;
+  if (today >= FREE_TIER_LIMITS.GAMES_PER_CALENDAR_DAY) {
+    throw new Error(
+      `Free tier limit reached: you can create up to ${FREE_TIER_LIMITS.GAMES_PER_CALENDAR_DAY} games per day. Please try again tomorrow or add funds on your profile page.`,
+    );
+  }
+}
+
+/**
+ * Bill the story-generation call. There is no game doc yet, so this is the one AI call
+ * charged outside the game transaction (werewolf does the same for previews): paid pays
+ * cost + markup from balance, free records the platform's cost in the spending history.
+ */
+async function chargePreviewUsage(
+  email: string,
+  tier: UserTier,
+  modelId: string,
+  usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number } | undefined,
+): Promise<void> {
+  if (!usage) return;
+  const costUsd = computeCostUsd(modelId, usage);
+  if (!(costUsd > 0)) return;
+  if (tier === USER_TIERS.PAID) {
+    const chargedAmount = parseFloat((costUsd * (1 + PAID_TIER_MARKUP)).toFixed(6));
+    const success = await deductBalance(email, chargedAmount);
+    if (!success) {
+      throw new Error(
+        'Insufficient balance. Please add funds on your profile page before starting a game.',
+      );
+    }
+    // Record the billed amount (cost + markup), not the raw model cost, so paid
+    // spending history matches what was actually charged.
+    await updateUserMonthlySpending(email, chargedAmount, tier);
+  } else {
+    await updateUserMonthlySpending(email, costUsd, tier);
+  }
 }
 
 export async function previewGame(input: GamePreviewInput): Promise<GamePreview> {
@@ -33,16 +92,34 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
   const { tier, apiKeys } = await getTierAndKeys(email);
   const botCount = input.playerCount - 1;
 
+  await assertTierAllowsNewGame(email, tier);
   // Deal first so tier violations surface before we spend tokens on story generation.
   const dealt = dealModels(input.botModelIds, botCount, tier, input.gmModelId);
-  validateModelUsageForTier(tier, input.gmModelId, dealt, getProvidedApiKeyNames(apiKeys));
+  validateModelUsageForTier(tier, input.gmModelId, dealt);
 
   const gm = createAgent('GM', buildStoryGenSystemPrompt(), input.gmModelId, apiKeys);
   const reply = await gm.askWithSchema(StoryGenSchema, [
     { role: 'user', content: buildStoryGenUserPrompt(input.theme, input.humanPlayerName, botCount) },
   ]);
+  await chargePreviewUsage(email, tier, input.gmModelId, reply.usage);
 
-  const characters = reply.content.players.slice(0, botCount).map((p, i) => ({
+  // Models sometimes deal the human's own character into `players` despite the prompt, or
+  // repeat a name. Either would seat two players under one name, so drop them here — and if
+  // that leaves the table short, say so instead of quietly opening a smaller game.
+  const seen = new Set<string>([input.humanPlayerName.trim().toLowerCase()]);
+  const rivals = reply.content.players.filter((p) => {
+    const key = p.name.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (rivals.length < botCount) {
+    throw new Error(
+      `The story generator dealt only ${rivals.length} of ${botCount} rival characters (it named you as one, or repeated a name). Deal again.`,
+    );
+  }
+
+  const characters = rivals.slice(0, botCount).map((p, i) => ({
     ...p,
     modelId: dealt[i % dealt.length],
   }));
@@ -52,12 +129,12 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
 export async function createGame(input: GamePreviewInput, preview: GamePreview): Promise<string> {
   const email = await requireEmail();
   validateInput(input);
-  const { tier, apiKeys } = await getTierAndKeys(email);
+  const { tier } = await getTierAndKeys(email);
+  await assertTierAllowsNewGame(email, tier);
   validateModelUsageForTier(
     tier,
     input.gmModelId,
     preview.characters.map((c) => c.modelId),
-    getProvidedApiKeyNames(apiKeys),
   );
 
   const now = Date.now();
@@ -99,8 +176,9 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     handNumber: 0,
     hand: null,
     gameQueue: [],
-    // intros live on the chat queue — they must never block the deal
-    chatQueue: bots.map((b) => ({ actor: b.name, kind: 'WELCOME_INTRO' as const })),
+    // intros live on the chat queue — they must never block the deal. Shuffled so the
+    // table doesn't introduce itself in seating order every game.
+    chatQueue: shuffle(bots).map((b) => ({ actor: b.name, kind: 'WELCOME_INTRO' as const })),
     messageCounter: 0,
     handHistory: [],
     gameMasterAiType: input.gmModelId,
@@ -121,6 +199,16 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     handNumber: 0,
   });
   return id;
+}
+
+/** Delete a table for good — the game doc and its whole message log. Owner only. */
+export async function deleteGame(gameId: string): Promise<void> {
+  const email = await requireEmail();
+  const ref = db.collection(COLLECTIONS.games).doc(gameId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return; // already gone — deleting twice is fine
+  if (snapshot.data()?.createdBy !== email) throw new Error('Not your table');
+  await db.recursiveDelete(ref);
 }
 
 export async function listGames(): Promise<Game[]> {

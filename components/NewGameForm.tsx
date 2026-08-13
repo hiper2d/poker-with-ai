@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { createGame, previewGame } from '@/app/actions/game-actions';
 import type { ModelAccess } from '@/app/actions/user-actions';
 import { getModelAccess } from '@/app/actions/user-actions';
+import ExpandableTextarea from '@/components/ExpandableTextarea';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, Panel, Pill } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
 import { SUPPORTED_MODELS } from '@/config/models';
 import { PERSONAS } from '@/config/personas';
 import { deckCapacity, FREE_TIER_UNLIMITED, getModelPickerOptions } from '@/lib/model-access';
-import type { GamePreview, GamePreviewInput } from '@/models/preview';
+import type { CharacterPreview, GamePreview, GamePreviewInput } from '@/models/preview';
 
 const AVATAR_COLORS = ['#5c8f7b', '#8d6a3f', '#a35f6d', '#4f6f8f', '#96608f', '#6f8f4f', '#8f7b4f'];
 
@@ -41,14 +42,14 @@ export default function NewGameForm() {
 
   const input: GamePreviewInput = { theme, humanPlayerName, playerCount, botModelIds, gmModelId };
 
-  // Once tier/keys load, drop selections the tier doesn't allow and re-seat the GM.
+  // Once the tier loads, drop selections the tier doesn't allow and re-seat the GM.
   useEffect(() => {
     getModelAccess()
-      .catch((): ModelAccess => ({ tier: 'api', providedKeyNames: [] }))
+      .catch((): ModelAccess => ({ tier: 'free' }))
       .then((loaded) => {
         setAccess(loaded);
         const enabled = new Set(
-          getModelPickerOptions(loaded.tier, new Set<string>(loaded.providedKeyNames))
+          getModelPickerOptions(loaded.tier)
             .filter((o) => !o.disabled)
             .map((o) => o.id),
         );
@@ -64,10 +65,10 @@ export default function NewGameForm() {
       });
   }, []);
 
-  const tier = access?.tier ?? 'api';
+  const tier = access?.tier ?? 'free';
   const pickerOptions = useMemo(() => {
     if (!access) return SUPPORTED_MODELS.map((m) => ({ id: m.id, disabled: false }));
-    return getModelPickerOptions(access.tier, new Set<string>(access.providedKeyNames));
+    return getModelPickerOptions(access.tier);
   }, [access]);
 
   const botCount = playerCount - 1;
@@ -99,7 +100,35 @@ export default function NewGameForm() {
       }
     });
 
-  const personaLabel = (id: string) => PERSONAS.find((p) => p.id === id)?.label ?? id;
+  // Everything in the generated preview is editable before the table opens (like werewolf):
+  // the scene, and each character's name, story, persona, and model.
+  const updateScene = (scene: string) => setPreview((prev) => prev && { ...prev, scene });
+  const updateCharacter = (index: number, patch: Partial<CharacterPreview>) =>
+    setPreview(
+      (prev) =>
+        prev && {
+          ...prev,
+          characters: prev.characters.map((c, i) => (i === index ? { ...c, ...patch } : c)),
+        },
+    );
+
+  const nameError = (() => {
+    if (!preview) return null;
+    const names = preview.characters.map((c) => c.name.trim());
+    if (names.some((n) => !n)) return 'Every character needs a name.';
+    const all = [...names, humanPlayerName.trim()].filter(Boolean);
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+    for (const n of all) {
+      const key = n.toLowerCase();
+      if (seen.has(key)) dupes.add(n);
+      seen.add(key);
+    }
+    if (dupes.size > 0) {
+      return `Character names must be unique (including yours) — duplicated: ${[...dupes].join(', ')}.`;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex flex-col gap-4">
@@ -141,9 +170,7 @@ export default function NewGameForm() {
           <div className="text-xs text-sage-dim">
             {tier === 'free'
               ? 'free tier — per-model bot caps apply'
-              : tier === 'api'
-                ? 'dealt randomly to characters · models with your keys'
-                : 'dealt randomly to characters'}
+              : 'dealt randomly to characters'}
           </div>
         </div>
         <ModelSelect
@@ -176,7 +203,13 @@ export default function NewGameForm() {
           {isPending && !preview ? 'Dealing characters…' : preview ? 'Re-deal characters' : 'Deal the characters'}
         </Button>
         {preview && (
-          <Button variant="gold" size="lg" onClick={onCreate} disabled={isPending} className="flex-1">
+          <Button
+            variant="gold"
+            size="lg"
+            onClick={onCreate}
+            disabled={isPending || !!nameError}
+            className="flex-1"
+          >
             {isPending ? 'Opening…' : 'Open the table'}
           </Button>
         )}
@@ -190,26 +223,70 @@ export default function NewGameForm() {
         <div className="flex flex-col gap-4">
           <Panel variant="glow" className="p-5">
             <CapsLabel className="mb-2">The scene</CapsLabel>
-            <p className="font-serif text-lg italic leading-relaxed text-body">{preview.scene}</p>
+            <ExpandableTextarea
+              value={preview.scene}
+              onChange={(e) => updateScene(e.target.value)}
+              minHeight={100}
+              aria-label="Scene"
+              className="w-full r-sm border border-transparent bg-transparent px-0 py-0 font-serif text-lg italic leading-relaxed text-body outline-none transition focus:border-gold focus:px-3 focus:py-2"
+            />
           </Panel>
+          {nameError && (
+            <p className="r-md border border-loss bg-panel px-4 py-3 text-sm text-loss">{nameError}</p>
+          )}
+          <div className="flex items-baseline justify-between gap-3">
+            <CapsLabel>Your rivals</CapsLabel>
+            <span className="text-xs text-sage-dim">
+              {preview.characters.length} rivals — {preview.characters.length + 1} at the table with you
+            </span>
+          </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             {preview.characters.map((c, i) => (
-              <Panel key={c.name} variant="card" className="flex flex-col gap-3.5 p-5">
+              <Panel key={i} variant="card" className="flex flex-col gap-3.5 p-5">
                 <div className="flex items-center gap-3.5">
                   <Avatar name={c.name} color={AVATAR_COLORS[i % AVATAR_COLORS.length]} size="md" />
-                  <div className="min-w-0">
-                    <div className="font-serif text-2xl leading-tight text-cream">{c.name}</div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-sage-dim">
-                      {personaLabel(c.personaId)}
-                    </div>
+                  <div className="min-w-0 flex-1">
+                    <input
+                      value={c.name}
+                      onChange={(e) => updateCharacter(i, { name: e.target.value })}
+                      placeholder="Character name"
+                      aria-label="Character name"
+                      className="w-full border-b border-transparent bg-transparent font-serif text-2xl leading-tight text-cream outline-none transition placeholder:text-sage hover:border-line focus:border-gold"
+                    />
+                    <select
+                      value={c.personaId}
+                      onChange={(e) => updateCharacter(i, { personaId: e.target.value })}
+                      aria-label="Persona"
+                      className="mt-0.5 w-full cursor-pointer appearance-none border-none bg-transparent p-0 text-[11px] uppercase tracking-[0.18em] text-sage-dim outline-none hover:text-sage"
+                    >
+                      {!PERSONAS.some((p) => p.id === c.personaId) && (
+                        <option value={c.personaId}>{c.personaId}</option>
+                      )}
+                      {PERSONAS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-                <p className="text-sm leading-relaxed text-body">{c.story}</p>
-                <div className="mt-auto flex items-center gap-2 text-[11px]">
-                  <span className="text-sage-dim">Played by</span>
-                  <span className="tabular-nums text-gold-pale">
-                    {SUPPORTED_MODELS.find((m) => m.id === c.modelId)?.displayName ?? c.modelId}
-                  </span>
+                <ExpandableTextarea
+                  value={c.story}
+                  onChange={(e) => updateCharacter(i, { story: e.target.value })}
+                  minHeight={110}
+                  aria-label="Character story"
+                  placeholder="Character background and table demeanor…"
+                  className="w-full r-sm border border-transparent bg-transparent px-0 py-0 text-sm leading-relaxed text-body outline-none transition focus:border-gold focus:px-3 focus:py-2"
+                />
+                <div className="mt-auto flex items-center gap-2.5 text-[11px]">
+                  <span className="flex-none text-sage-dim">Played by</span>
+                  <ModelSelect
+                    options={pickerOptions}
+                    selected={[c.modelId]}
+                    onChange={(ids) => updateCharacter(i, { modelId: ids[0] ?? c.modelId })}
+                    mode="single"
+                    className="min-w-0 flex-1"
+                  />
                 </div>
               </Panel>
             ))}

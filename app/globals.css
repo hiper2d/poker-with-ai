@@ -158,6 +158,7 @@
   --t-bubble-ink: #22201c;
   --t-caps-ls: 0.08em;
   --t-bw: 2.5px;
+  --t-card-gap: 3px;
   --t-table-r: 60% 55% 58% 62%/48% 52% 47% 53%;
   --t-tilt: rotate(-1deg);
 }
@@ -299,6 +300,8 @@ body {
   animation: dealIn 0.35s ease both;
 }
 .card-face-red { color: var(--t-red); }
+/* breathing room between rank and suit — handwriting fonts (sketch) run them together */
+.card-face .card-suit { margin-left: var(--t-card-gap, 0px); }
 .card-back {
   border-radius: var(--t-rad-sm);
   background: repeating-linear-gradient(45deg, var(--t-panel) 0 6px, var(--t-line) 6px 12px);
@@ -336,6 +339,14 @@ body {
   outline-offset: 3px;
   animation: seatPulse 1.6s ease-in-out infinite;
 }
+/* narrow screens: seats shrink so the whole oval stays on screen */
+@media (max-width: 640px) {
+  .seat-pill {
+    min-width: 0;
+    gap: 6px;
+    padding: 5px 8px;
+  }
+}
 
 @keyframes dealIn {
   from { transform: translateY(-14px) rotate(-6deg); opacity: 0; }
@@ -352,6 +363,12 @@ body {
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 .bubble-pop { animation: bubblePop 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+/* edge-anchored bubbles position with left/right instead of translate(-50%) */
+@keyframes bubblePopEdge {
+  from { opacity: 0; transform: translateY(-6px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+.bubble-pop-edge { animation: bubblePopEdge 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
 
 @keyframes rowIn {
   from { opacity: 0; transform: translateY(-4px); }

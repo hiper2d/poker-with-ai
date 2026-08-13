@@ -15,7 +15,7 @@ export default function PlayingCard({ card, size = 'sm' }: PlayingCardProps) {
   return (
     <div className={`card-face ${dims} ${red ? 'card-face-red' : ''}`}>
       {card[0] === 'T' ? '10' : card[0]}
-      {SUIT_SYMBOL[suit] ?? suit}
+      <span className="card-suit">{SUIT_SYMBOL[suit] ?? suit}</span>
     </div>
   );
 }

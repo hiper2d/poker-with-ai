@@ -103,7 +103,7 @@ describe('chatBudget', () => {
   const limits = GAME_CONFIG.chatBudget;
 
   it('counts bot replies for this hand and the whole game', () => {
-    const game = chattyGame(); // hand #4, tier 'api'
+    const game = chattyGame(); // hand #4, tier 'paid'
     const messages = [
       msg(1, 'BOT_ANSWER', 'old', 'Vex', 3),
       msg(2, 'BOT_ANSWER', 'now', 'Vex', 4),

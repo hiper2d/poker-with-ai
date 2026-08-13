@@ -26,7 +26,7 @@ export function gameWith(over: Partial<Game>): Game {
     scene: 's',
     status: 'HAND_RESULTS',
     createdBy: 'u',
-    createdWithTier: 'api',
+    createdWithTier: 'paid',
     humanPlayerName: 'Paul',
     seats: [
       { seatIndex: 0, name: 'Paul', isHuman: true, stack: 10000, status: 'active' },

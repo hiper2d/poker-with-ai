@@ -1,36 +1,46 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
+import Dropdown, { DROPDOWN_ITEM } from '@/components/ui/Dropdown';
 
 export const THEMES = ['parlor', 'pixel', 'flat', 'paper', 'terminal', 'sketch'] as const;
 export type Theme = (typeof THEMES)[number];
 
-export default function ThemeSwitcher() {
-  const [theme, setTheme] = useState<Theme>('parlor');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('poker-theme') as Theme | null;
-    if (saved && THEMES.includes(saved)) setTheme(saved);
-  }, []);
-
-  const apply = (t: Theme) => {
-    setTheme(t);
-    if (t === 'parlor') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = t;
-    localStorage.setItem('poker-theme', t);
+// The theme lives in localStorage (applied before paint by the layout boot script);
+// this store just lets React re-render the trigger label when it changes.
+let listeners: Array<() => void> = [];
+const subscribe = (cb: () => void) => {
+  listeners.push(cb);
+  return () => {
+    listeners = listeners.filter((l) => l !== cb);
   };
+};
+const getTheme = (): Theme => {
+  const saved = localStorage.getItem('poker-theme') as Theme | null;
+  return saved && THEMES.includes(saved) ? saved : 'parlor';
+};
+
+function apply(t: Theme) {
+  if (t === 'parlor') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('poker-theme', t);
+  for (const l of listeners) l();
+}
+
+export default function ThemeSwitcher() {
+  const theme = useSyncExternalStore(subscribe, getTheme, () => 'parlor' as Theme);
 
   return (
-    <div className="hidden items-center gap-1 md:flex">
+    <Dropdown ariaLabel="Theme" label={<span className="capitalize">{theme}</span>}>
       {THEMES.map((t) => (
         <button
           key={t}
           onClick={() => apply(t)}
-          className={`pill min-h-8 px-2.5 text-[11px] capitalize ${theme === t ? 'pill-on' : ''}`}
+          className={`${DROPDOWN_ITEM} capitalize ${theme === t ? 'text-gold-pale' : ''}`}
         >
           {t}
         </button>
       ))}
-    </div>
+    </Dropdown>
   );
 }

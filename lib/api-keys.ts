@@ -3,16 +3,14 @@
  * return raw key values and must never be invokable as server actions. Importing this
  * from client code fails at build time via the firebase-admin dependency.
  *
- * Key routing by tier:
- * - api:        the user's own keys (poker_users doc), env *_K vars filling gaps (dev).
- * - free/paid:  platform keys from the config/freeTierApiKeys doc — the same document
- *               werewolf maintains (both apps share the `config` collection and the
- *               same *_API_KEY names). Env vars fill gaps for local dev.
+ * Every tier plays on platform keys (werewolf's post-refactor model): the shared
+ * config/freeTierApiKeys doc that werewolf maintains, with env vars filling gaps for
+ * local dev. The free/paid difference is limits and billing, never key routing.
  */
 import type { ApiKeyMap, ApiKeyName } from '@/config/models';
 import { ENV_KEY_FALLBACKS } from '@/config/models';
 import { COLLECTIONS, db } from '@/lib/firebase/server';
-import type { PokerUser, UserTier } from '@/models/user';
+import { coerceTier, type UserTier } from '@/models/user';
 
 function envKeys(): ApiKeyMap {
   const keys: ApiKeyMap = {};
@@ -34,15 +32,10 @@ export interface TierKeys {
   apiKeys: ApiKeyMap;
 }
 
-/** Reads the user doc once and resolves both tier and the keys that tier plays on. */
+/** Resolve the user's tier and the platform keys everyone plays on. */
 export async function getTierAndKeys(email: string): Promise<TierKeys> {
   const snapshot = await db.collection(COLLECTIONS.users).doc(email).get();
-  const user = snapshot.data() as PokerUser | undefined;
-  const tier: UserTier = user?.tier ?? 'api';
-
-  if (tier === 'api') {
-    return { tier, apiKeys: { ...envKeys(), ...(user?.apiKeys ?? {}) } };
-  }
+  const tier = coerceTier(snapshot.data()?.tier);
   const platform = await getFreeTierApiKeys();
   return { tier, apiKeys: { ...envKeys(), ...platform } };
 }

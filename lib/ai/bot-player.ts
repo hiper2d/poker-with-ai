@@ -13,10 +13,12 @@ import {
 import type { LegalActions } from '@/lib/engine/betting';
 import { legalActions } from '@/lib/engine/betting';
 import type { BettingAction } from '@/lib/engine/types';
+import { recordBotUsage } from '@/lib/cost-tracking';
 import { messageCounterOf, unsummarizedChat } from '@/lib/game/compaction';
 import { effectiveModel, retryNote } from '@/lib/game/retry';
 import { logger } from '@/lib/logging/logger';
 import type { Bot, Game, GameMessage } from '@/models/game';
+import { speechOf } from './json-response-parser';
 import { BettingDecisionSchema, CompactionSchema, type BettingDecision } from './types';
 
 export interface BotTurn {
@@ -54,6 +56,7 @@ export async function decideBotAction(
       },
     ]);
   });
+  await recordBotUsage(game, bot.name, model, reply);
 
   const action = coerce(reply.content, bot.name, legal);
   return {
@@ -73,7 +76,8 @@ export async function botIntro(game: Game, bot: Bot, apiKeys: ApiKeyMap): Promis
       { role: 'user', content: buildIntroPrompt() + retryNote(game.chatRetry, bot.name) },
     ]);
   });
-  return reply.content.trim();
+  await recordBotUsage(game, bot.name, model, reply);
+  return speechOf(reply.content);
 }
 
 /** Free-chat reply (router/mention driven) — independent of the game loop. */
@@ -99,7 +103,8 @@ export async function botChatReply(
       },
     ]);
   });
-  return reply.content.trim();
+  await recordBotUsage(game, bot.name, model, reply);
+  return speechOf(reply.content);
 }
 
 export interface ChatCompactionResult {
@@ -137,6 +142,7 @@ export async function compactBotChat(
       },
     ]);
   });
+  await recordBotUsage(game, bot.name, model, reply);
   const watermark = pending.reduce((max, m) => Math.max(max, messageCounterOf(m)), bot.chatWatermark);
   return { entry: formatCompaction(game.handNumber, reply.content), watermark };
 }
@@ -157,6 +163,7 @@ export async function compactBotContext(
       },
     ]);
   });
+  await recordBotUsage(game, bot.name, model, reply);
   return formatCompaction(game.handNumber, reply.content);
 }
 
