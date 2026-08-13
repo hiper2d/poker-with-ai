@@ -634,6 +634,73 @@ function FlyingChip({ flight }: { flight: ChipFlight }) {
   );
 }
 
+/**
+ * One seat's table-talk popup. Lives on the felt itself (not inside the seat wrapper):
+ * its left edge is clamped to the container, so no pill width or transform can push it
+ * off-screen. Draggable — grab anywhere on the bubble to move it off the action; a new
+ * message from the same seat remounts it (keyed by text) back at its anchor.
+ *
+ * The pop-in animation sits on the inner div: it animates `transform`, which would
+ * otherwise fight the outer div's drag translate (and Tailwind translate utilities —
+ * the `translate` property — compose with animated `transform` instead of replacing
+ * it, which is what used to shift centered bubbles half a width off their seat).
+ */
+function SeatBubble({
+  author,
+  authorColor,
+  left,
+  top,
+  text,
+  onDismiss,
+}: {
+  author: string;
+  authorColor: string;
+  /** seat-center percentages within the felt */
+  left: number;
+  top: number;
+  text: string;
+  onDismiss: () => void;
+}) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
+  const below = top <= 60; // top rows speak below their seat, bottom rows above
+  return (
+    <div
+      className="absolute z-[35] w-56 max-w-[62vw] cursor-grab touch-none select-none active:cursor-grabbing"
+      style={{
+        left: `clamp(0%, calc(${left}% - 7rem), calc(100% - min(14rem, 62vw)))`,
+        ...(below ? { top: `calc(${top}% + 2rem)` } : { bottom: `calc(${100 - top}% + 2rem)` }),
+        transform: `translate(${offset.x}px, ${offset.y}px)`,
+      }}
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest('button')) return; // let the ✕ be a click
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRef.current = { px: e.clientX, py: e.clientY, ox: offset.x, oy: offset.y };
+      }}
+      onPointerMove={(e) => {
+        const d = dragRef.current;
+        if (d) setOffset({ x: d.ox + e.clientX - d.px, y: d.oy + e.clientY - d.py });
+      }}
+      onPointerUp={() => (dragRef.current = null)}
+      onPointerCancel={() => (dragRef.current = null)}
+    >
+      <div className="bubble-pop-edge relative w-fit max-w-full">
+        <ChatBubble author={author} authorColor={authorColor}>
+          {text}
+        </ChatBubble>
+        <button
+          onClick={onDismiss}
+          title="Dismiss"
+          aria-label={`Dismiss ${author}'s message`}
+          className="absolute -right-1.5 -top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-line bg-panel text-[10px] leading-none text-sage shadow-theme transition hover:border-gold hover:text-cream"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PokerTable({
   game,
   bubbles,
@@ -785,19 +852,17 @@ function PokerTable({
             const model = bot && SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
             const player = game.hand?.players.find((p) => p.name === seat.name);
             const behind = player ? player.startingStack - player.totalCommitted : seat.stack;
-            const bubble = bubbles[seat.name];
             const acting = !game.hand?.complete && game.hand?.toAct === seat.name;
             return (
               <div
                 key={seat.seatIndex}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
+                className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
                 // left is clamped so edge seats stay on-screen: on narrow containers the
                 // ellipse would put seat centers ~30px from the edge, hanging half the
-                // pill (and its bubble) outside the viewport.
+                // pill outside the viewport.
                 style={{
                   left: `clamp(3.5rem, ${left}%, calc(100% - 3.5rem))`,
                   top: `${top}%`,
-                  zIndex: bubble ? 30 : 20,
                 }}
               >
                 {acting && (
@@ -820,36 +885,25 @@ function PokerTable({
                   dealer={game.buttonSeat === seat.seatIndex}
                   blind={seat.name === sbName ? 'SB' : seat.name === bbName ? 'BB' : undefined}
                 />
-                {bubble && (
-                  // Clamped to the seat's side of the felt so edge seats don't push the
-                  // bubble off-screen, and flipped above for the bottom row (incl. the human).
-                  <div
-                    className={`absolute z-[35] w-56 max-w-[62vw] ${
-                      top > 60 ? 'bottom-[calc(100%+10px)]' : 'top-[calc(100%+10px)]'
-                    } ${
-                      left < 25
-                        ? 'bubble-pop-edge left-0'
-                        : left > 75
-                          ? 'bubble-pop-edge right-0'
-                          : 'bubble-pop left-1/2 -translate-x-1/2'
-                    }`}
-                  >
-                    <div className="relative w-fit max-w-full">
-                      <ChatBubble author={seat.name} authorColor={avatarColor(game, seat.name)}>
-                        {bubble}
-                      </ChatBubble>
-                      <button
-                        onClick={() => onDismissBubble(seat.name)}
-                        title="Dismiss"
-                        aria-label={`Dismiss ${seat.name}'s message`}
-                        className="absolute -right-1.5 -top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-line bg-panel text-[10px] leading-none text-sage shadow-theme transition hover:border-gold hover:text-cream"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
+            );
+          })}
+          {/* speech bubbles — their own felt-level layer, clamped to the container so
+              they can never leave the screen, and draggable out of the way */}
+          {seats.map((seat, i) => {
+            const bubble = bubbles[seat.name];
+            if (!bubble) return null;
+            const { left, top } = seatPos(i);
+            return (
+              <SeatBubble
+                key={`${seat.seatIndex}:${bubble}`}
+                author={seat.name}
+                authorColor={avatarColor(game, seat.name)}
+                left={left}
+                top={top}
+                text={bubble}
+                onDismiss={() => onDismissBubble(seat.name)}
+              />
             );
           })}
         </>
@@ -1069,7 +1123,7 @@ function Rail({
   const endRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [eventsShown, setEventsShown] = useState(false);
+  const [eventsShown, setEventsShown] = useState(true);
   const [prodding, setProdding] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
 
