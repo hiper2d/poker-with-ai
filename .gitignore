@@ -54,3 +54,4 @@ ds-bundle/
 
 # keep the env template
 !.env.example
+.env*.local

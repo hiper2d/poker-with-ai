@@ -384,12 +384,18 @@ body {
   outline-offset: 3px;
   animation: seatPulse 1.6s ease-in-out infinite;
 }
-/* narrow screens: seats shrink so the whole oval stays on screen */
+/* narrow screens: seats shrink so the whole oval stays on screen, and the felt turns
+   portrait-ish — a 1.62 oval leaves no vertical room between six seats on a phone */
 @media (max-width: 640px) {
   .seat-pill {
     min-width: 0;
     gap: 6px;
     padding: 5px 8px;
+  }
+  .table-felt {
+    aspect-ratio: 1.05;
+    /* short phones: give up oval height before pushing the action bar off-screen */
+    max-height: 46dvh;
   }
 }
 

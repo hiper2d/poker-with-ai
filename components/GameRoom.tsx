@@ -322,14 +322,19 @@ export default function GameRoom({
   return (
     <div className="relative flex h-[calc(100dvh-3.5rem)] overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* top bar */}
-        <div className="flex flex-none flex-wrap items-center gap-4 border-b border-line px-6 py-3">
-          <span className="font-serif text-xl tracking-[0.01em] text-cream">{game.theme}</span>
-          <div className="h-4 w-px bg-line" />
-          <div className="flex items-center gap-2.5 text-xs uppercase tracking-[0.08em] text-sage">
-            <span>Hand #{game.handNumber}</span>
-            <span className="text-sage opacity-50">/</span>
+        {/* top bar — a single line on phones: "Hand" and the blinds give way first,
+            then the theme name and the thinking notice truncate */}
+        <div className="flex flex-none items-center gap-2.5 border-b border-line px-3 py-3 sm:flex-wrap sm:gap-4 sm:px-6">
+          <span className="min-w-0 truncate font-serif text-lg tracking-[0.01em] text-cream sm:text-xl">
+            {game.theme}
+          </span>
+          <div className="h-4 w-px flex-none bg-line" />
+          <div className="flex flex-none items-center gap-2.5 text-xs uppercase tracking-[0.08em] text-sage">
             <span>
+              <span className="hidden sm:inline">Hand </span>#{game.handNumber}
+            </span>
+            <span className="hidden text-sage opacity-50 sm:inline">/</span>
+            <span className="hidden sm:inline">
               Blinds {smallBlind.toLocaleString()} · {bigBlind.toLocaleString()}
             </span>
             <span className="text-sage opacity-50">/</span>
@@ -341,7 +346,7 @@ export default function GameRoom({
           </div>
           <div className="flex-1" />
           {!myTurn && game.status !== 'GAME_OVER' && (
-            <span className="text-[11px] uppercase tracking-[0.2em] text-gold-pale">
+            <span className="min-w-0 truncate text-[11px] uppercase tracking-[0.2em] text-gold-pale">
               {game.hand && !game.hand.complete && game.hand.toAct
                 ? `${game.hand.toAct} is thinking…`
                 : game.status === 'HAND_RESULTS'
@@ -349,8 +354,40 @@ export default function GameRoom({
                   : 'dealing…'}
             </span>
           )}
-          <Pill selected={railOpen} onClick={() => setRailPref(!railOpen)}>
-            Table talk
+          <Pill
+            selected={railOpen}
+            className="flex-none !px-2.5"
+            onClick={() => setRailPref(!railOpen)}
+            title={railOpen ? 'Hide table talk' : 'Show table talk'}
+            aria-label={railOpen ? 'Hide table talk' : 'Show table talk'}
+          >
+            <span className="flex items-center gap-1">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 8.5a1.5 1.5 0 0 1-1.5 1.5H6l-3 2.5V10h-.5A1.5 1.5 0 0 1 1 8.5v-4A1.5 1.5 0 0 1 2.5 3h8A1.5 1.5 0 0 1 12 4.5z" />
+              </svg>
+              <svg
+                className={`transition-transform ${railOpen ? '' : 'rotate-180'}`}
+                width="11"
+                height="11"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 3.5L8.5 7L5 10.5" />
+              </svg>
+            </span>
           </Pill>
         </div>
 
@@ -754,7 +791,14 @@ function PokerTable({
               <div
                 key={seat.seatIndex}
                 className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${left}%`, top: `${top}%`, zIndex: bubble ? 30 : 20 }}
+                // left is clamped so edge seats stay on-screen: on narrow containers the
+                // ellipse would put seat centers ~30px from the edge, hanging half the
+                // pill (and its bubble) outside the viewport.
+                style={{
+                  left: `clamp(3.5rem, ${left}%, calc(100% - 3.5rem))`,
+                  top: `${top}%`,
+                  zIndex: bubble ? 30 : 20,
+                }}
               >
                 {acting && (
                   <>
@@ -1060,9 +1104,20 @@ function Rail({
   const eventCount = messages.filter((m) => EVENT_TYPES.includes(m.messageType)).length;
 
   // Keyed on the last id, not length — a capped feed keeps a constant length.
+  // Opening the rail jumps straight to the newest message (the feed remounts at the
+  // top when closed); the smooth glide is only for new talk while it's already open.
   const lastFeedId = feed[feed.length - 1]?.id;
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (open) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    endRef.current?.scrollIntoView({
+      behavior: wasOpenRef.current ? 'smooth' : 'instant',
+      block: 'nearest',
+    });
+    wasOpenRef.current = true;
   }, [lastFeedId, open]);
 
   const submit = async () => {

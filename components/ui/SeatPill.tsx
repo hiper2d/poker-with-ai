@@ -42,7 +42,7 @@ export default function SeatPill({
           <div className="flex items-baseline gap-1.5 leading-tight">
             <span className="text-[13px] text-cream">{name}</span>
             {isHuman && <span className="text-[10px] text-sage">you</span>}
-            {tag && !isHuman && <span className="text-[9px] text-sage">{tag}</span>}
+            {tag && !isHuman && <span className="hidden text-[9px] text-sage sm:inline">{tag}</span>}
           </div>
           <div className="text-[11px] leading-tight tabular-nums text-sage">
             {line}
