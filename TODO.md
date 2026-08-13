@@ -40,17 +40,33 @@ What follows is ordered roughly by value.
 
 ## 2. Money & models
 
-- [ ] **Cost tracking port**: per-call Firestore transaction (user spendings,
-      `poker_requestStats` doc, per-bot accumulated usage), `cost` on messages, cost badges
-      in UI. Pricing table now covers all 10 models (ported from werewolf's verified
-      numbers) — extended-context/peak-hour surcharges still unmodeled.
-- [x] **Tier enforcement** (done): free/api/paid tiers with werewolf's price-banded
-      free-tier policy (`config/tiers.ts`), tier-aware key routing via shared
-      `config/freeTierApiKeys` (`lib/api-keys.ts`), picker + server-side validation
-      (`lib/model-access.ts` + tests), tier cards on the profile page. Paid tier switch
-      is blocked until the balance flow (Stripe) exists.
-- [ ] **Paid tier balance flow**: Stripe top-up + per-call deduction with the 30% markup
-      (`PAID_TIER_MARKUP`); unblock the Paid card in `ProfileTierCards`.
+- [x] **Cost tracking port** (done): every AI call commits one Firestore transaction —
+      user charge + monthly spendings + game totals (`totalGameCost`, per-bot/GM
+      `tokenUsage`) + a `poker_requestStats` doc (`lib/cost-tracking.ts`); billing keys
+      off the user's CURRENT tier read in-transaction. Preview (story-gen) charges
+      standalone in `game-actions.ts`. Extended-context/peak-hour surcharges still
+      unmodeled.
+- [x] **Tier enforcement** (done, reworked to werewolf's two-tier model): the BYO-keys
+      'api' tier is retired — everyone plays on platform keys (`config/freeTierApiKeys`).
+      free = price-banded subset + per-game caps + 5 games/day; paid = full catalog,
+      cost + 30% (`PAID_TIER_MARKUP`) from a prepaid balance, gated on balance > 0 at
+      game creation. `gameAction` enforces ownership + tier match (a table plays under
+      the tier it was created with). Legacy 'api' docs coerce to free and are cleaned on
+      sign-in.
+- [x] **Paid tier balance flow** (mostly done): per-call deduction with markup,
+      `addBalance` with free→paid auto-upgrade, top-up UI, `/models` catalog page —
+      live. Remaining:
+      - [x] **Wire Stripe** (code done): real checkout + webhook with signature verify,
+            `poker_stripeEvents` idempotency, and the shared-account `metadata.app`
+            guard (mirror guard added to werewolf's checkout + webhook — commit/deploy
+            werewolf BEFORE taking a real poker payment, or top-ups double-credit).
+            - [ ] Fill env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+                  `NEXT_PUBLIC_STRIPE_PRICE_1/3/5/10`) and register the webhook
+                  endpoint; test-mode end-to-end run (card 4242…).
+- [ ] Cost badges in UI (per-message/per-bot cost display; the data is already on the
+      game doc and in `poker_requestStats`).
+- [ ] Verify the first live billed hand: balance decrement, `poker_requestStats` docs,
+      game totals accumulating.
 - [ ] **Mistral agent** (own SDK; only unported provider — keys already in .env).
 
 ## 3. Engine correctness

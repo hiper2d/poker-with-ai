@@ -23,11 +23,16 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-mini': { inputPerMTok: 0.2, outputPerMTok: 1.2, cachedInputPerMTok: 0.02 },
   // Google
   gemini: { inputPerMTok: 2, outputPerMTok: 12, cachedInputPerMTok: 0.2 },
-  'gemini-flash': { inputPerMTok: 1.5, outputPerMTok: 7.5, cachedInputPerMTok: 0.15 },
+  // Gemini 3.7 Flash launch pricing through 2026-12-31; doubles to 1.5/7.5/0.15 on
+  // 2027-01-01 (ai.google.dev, fetched 2026-08-13) — ACTION NEEDED then: update these rates,
+  // which also drops it back out of the free-tier single-bot band (>$6 output).
+  'gemini-flash': { inputPerMTok: 0.75, outputPerMTok: 3.75, cachedInputPerMTok: 0.075 },
   'gemini-lite': { inputPerMTok: 0.3, outputPerMTok: 1.5, cachedInputPerMTok: 0.025 },
-  // DeepSeek
-  'deepseek-flash': { inputPerMTok: 0.14, outputPerMTok: 0.28, cachedInputPerMTok: 0.0028 },
-  deepseek: { inputPerMTok: 0.435, outputPerMTok: 0.87, cachedInputPerMTok: 0.003625 },
+  // DeepSeek — new base (off-peak) rates, provider-effective 2026-08-16; charged from deploy,
+  // matching werewolf's carry-the-higher-price policy. The 2× peak surcharge (UTC 1-4 and
+  // 6-10) is a peak-hour surcharge and is not modeled here — see the header.
+  'deepseek-flash': { inputPerMTok: 0.22, outputPerMTok: 0.66, cachedInputPerMTok: 0.007 },
+  deepseek: { inputPerMTok: 0.66, outputPerMTok: 1.98, cachedInputPerMTok: 0.022 },
   // Grok (cached price is per-model on xAI, not a uniform ratio; rates double past 200K
   // context — not modeled, see header)
   grok: { inputPerMTok: 2, outputPerMTok: 6, cachedInputPerMTok: 0.5 },

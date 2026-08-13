@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
-/* ── Themed design system (from "Poker with AI — UI Kit" / GameTableThemed) ──
-   Six theme schemas defined as semantic CSS variables; every Tailwind token and
-   component class below reads from them, so [data-theme] on <html> reskins the app. */
+/* ── Themed design system (from "Poker with AI — UI Kit") ──
+   Seven theme schemas defined as semantic CSS variables; every Tailwind token and
+   component class below reads from them, so [data-theme] on <html> reskins the app.
+   parlor/pixel/terminal/sketch come from GameTableThemed; neon/sumi/bauhaus from
+   their standalone templates. */
 
 :root {
   /* parlor (default) */
@@ -60,52 +62,88 @@
   --t-table-r: 0px;
 }
 
-[data-theme='flat'] {
-  --t-bg: #eceae4;
-  --t-panel: #eceae4;
-  --t-line: #cfccc3;
-  --t-tx: #1b1d1a;
-  --t-dim: #82857d;
-  --t-acc: #e0463a;
-  --t-acc-ink: #fff;
+/* neon — late-night arcade: ink-blue room, cyan and magenta tubes, mono numerals */
+[data-theme='neon'] {
+  --t-bg: #080a18;
+  --t-panel: #0d1230;
+  --t-line: #2a3766;
+  --t-tx: #cfd6f5;
+  --t-dim: #6b78ad;
+  --t-acc: #3ff0e0;
+  --t-acc-ink: #071019;
   --t-felt: none;
-  --t-felt-edge: #cfccc3;
-  --t-card: #eceae4;
-  --t-card-ink: #1b1d1a;
-  --t-red: #e0463a;
-  --t-chip: #1b1d1a;
-  --t-rad: 3px;
-  --t-rad-sm: 3px;
-  --t-font: 'Space Grotesk', system-ui, sans-serif;
-  --t-disp: 'Space Grotesk', system-ui, sans-serif;
-  --t-shadow: none;
-  --t-bubble: #1b1d1a;
-  --t-bubble-ink: #eceae4;
-  --t-caps-ls: 0.14em;
+  --t-felt-bg: #0d1230;
+  --t-felt-edge: #3d4b86;
+  --t-card: #141a3d;
+  --t-card-ink: #cfd6f5;
+  --t-red: #ff4fd8;
+  --t-chip: #3ff0e0;
+  --t-rad: 6px;
+  --t-rad-sm: 5px;
+  --t-font: 'Chakra Petch', system-ui, sans-serif;
+  --t-disp: 'Space Mono', monospace;
+  --t-disp-w: 700;
+  --t-shadow: 0 0 18px rgba(63, 240, 224, 0.18);
+  --t-bubble: #101538;
+  --t-bubble-ink: #cfd6f5;
+  --t-caps-ls: 0.22em;
+  --t-table-r: 999px;
 }
 
-[data-theme='paper'] {
-  --t-bg: #f4f0e6;
-  --t-panel: #faf7ef;
-  --t-line: #d8d0bd;
-  --t-tx: #2b2a26;
-  --t-dim: #8b8574;
-  --t-acc: #8a2f24;
-  --t-acc-ink: #faf7ef;
+/* sumi — quiet ink-and-paper: warm rice ground, sumi black, one vermillion seal */
+[data-theme='sumi'] {
+  --t-bg: #e8e4da;
+  --t-panel: #f6f3ec;
+  --t-line: #c2bcac;
+  --t-tx: #22201c;
+  --t-dim: #8c877c;
+  --t-acc: #b8402c;
+  --t-acc-ink: #f6f3ec;
   --t-felt: none;
-  --t-felt-edge: #c9c0aa;
-  --t-card: #fffdf7;
-  --t-card-ink: #2b2a26;
-  --t-red: #8a2f24;
-  --t-chip: #8a2f24;
-  --t-rad: 2px;
+  --t-felt-bg: #ddd8cb;
+  --t-felt-edge: #22201c;
+  --t-card: #f6f3ec;
+  --t-card-ink: #22201c;
+  --t-red: #b8402c;
+  --t-chip: #b8402c;
+  --t-rad: 3px;
   --t-rad-sm: 2px;
-  --t-font: 'EB Garamond', Georgia, serif;
-  --t-disp: 'EB Garamond', Georgia, serif;
-  --t-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
-  --t-bubble: #efe9da;
-  --t-bubble-ink: #2b2a26;
-  --t-caps-ls: 0.2em;
+  --t-font: 'Zen Kaku Gothic New', system-ui, sans-serif;
+  --t-disp: 'Zen Old Mincho', Georgia, serif;
+  --t-shadow: none;
+  --t-bubble: #f6f3ec;
+  --t-bubble-ink: #22201c;
+  --t-caps-ls: 0.3em;
+  --t-table-r: 999px;
+}
+
+/* bauhaus — primary-color geometry: bone ground, blue-red-yellow blocks, grotesk caps */
+[data-theme='bauhaus'] {
+  --t-bg: #f0ece1;
+  --t-panel: #e8e3d5;
+  --t-line: #141414;
+  --t-tx: #141414;
+  --t-dim: #6d6a62;
+  --t-acc: #1a48c4;
+  --t-acc-ink: #f0ece1;
+  --t-felt: none;
+  --t-felt-bg: #e2ddce;
+  --t-felt-edge: #141414;
+  --t-card: #f0ece1;
+  --t-card-ink: #141414;
+  --t-red: #d8232a;
+  --t-chip: #f2c018;
+  --t-rad: 0px;
+  --t-rad-sm: 0px;
+  --t-font: 'Archivo', system-ui, sans-serif;
+  --t-disp: 'Archivo', system-ui, sans-serif;
+  --t-disp-w: 700;
+  --t-shadow: none;
+  --t-bubble: #f0ece1;
+  --t-bubble-ink: #141414;
+  --t-caps-ls: 0.16em;
+  --t-bw: 2px;
+  --t-table-r: 999px;
 }
 
 [data-theme='terminal'] {
@@ -218,6 +256,13 @@ body {
 .r-sm { border-radius: var(--t-rad-sm); }
 .tilt { transform: var(--t-tilt); }
 .shadow-theme { box-shadow: var(--t-shadow); }
+
+/* panel look on an opaque base — for elements that must fully cover what's behind
+   them (error banners); --t-panel alone is translucent in some themes */
+.panel-opaque {
+  background-color: var(--t-bg);
+  background-image: linear-gradient(var(--t-panel), var(--t-panel));
+}
 
 /* small uppercase label */
 .label-caps {

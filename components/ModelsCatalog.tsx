@@ -5,14 +5,13 @@ import { Panel } from '@/components/ui';
 import { PROVIDER_NAMES, SUPPORTED_MODELS } from '@/config/models';
 import { MODEL_PRICING } from '@/config/pricing';
 import {
-  FREE_TIER_LIMITED_MAX_BOTS,
   FREE_TIER_OUTPUT_PRICE_BANDS,
   FREE_TIER_THINKING_COST_FACTOR,
   getFreeTierPolicy,
   isHybridThinkingModel,
 } from '@/config/tiers';
 
-type BandId = 'unlim' | 'three' | 'one' | 'paid';
+type BandId = 'unlim' | 'one' | 'paid';
 type Filter = 'all' | 'free' | 'paid';
 
 interface CatalogModel {
@@ -51,16 +50,6 @@ const BAND_META: Record<BandId, BandMeta> = {
     pill: 'border-gold text-gold-pale',
     dot: 'bg-gold',
   },
-  three: {
-    id: 'three',
-    capLabel: `Up to ${FREE_TIER_LIMITED_MAX_BOTS} bots / game`,
-    cap: `${FREE_TIER_LIMITED_MAX_BOTS} / game`,
-    range: `≤ $${FREE_TIER_OUTPUT_PRICE_BANDS.LIMITED_MAX}`,
-    desc: `Seat up to ${FREE_TIER_LIMITED_MAX_BOTS} on Free.`,
-    availability: 'free',
-    pill: 'border-line text-cream',
-    dot: 'bg-cream',
-  },
   one: {
     id: 'one',
     capLabel: '1 bot / game',
@@ -83,17 +72,15 @@ const BAND_META: Record<BandId, BandMeta> = {
   },
 };
 
-const BAND_ORDER: BandId[] = ['unlim', 'three', 'one', 'paid'];
+const BAND_ORDER: BandId[] = ['unlim', 'one', 'paid'];
 
 function policyToBand(maxBots: number, available: boolean): BandId {
   if (!available) return 'paid';
-  if (maxBots === -1) return 'unlim';
-  if (maxBots === FREE_TIER_LIMITED_MAX_BOTS) return 'three';
-  return 'one';
+  return maxBots === -1 ? 'unlim' : 'one';
 }
 
 function buildBands(): Record<BandId, CatalogModel[]> {
-  const out: Record<BandId, CatalogModel[]> = { unlim: [], three: [], one: [], paid: [] };
+  const out: Record<BandId, CatalogModel[]> = { unlim: [], one: [], paid: [] };
   for (const config of SUPPORTED_MODELS) {
     const pricing = MODEL_PRICING[config.id];
     if (!pricing) continue;

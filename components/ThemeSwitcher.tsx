@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import Dropdown, { DROPDOWN_ITEM } from '@/components/ui/Dropdown';
 
-export const THEMES = ['parlor', 'pixel', 'flat', 'paper', 'terminal', 'sketch'] as const;
+export const THEMES = ['parlor', 'pixel', 'neon', 'sumi', 'bauhaus', 'terminal', 'sketch'] as const;
 export type Theme = (typeof THEMES)[number];
 
 // The theme lives in localStorage (applied before paint by the layout boot script);

@@ -504,7 +504,7 @@ function FailureBanner({
 
   return (
     <div
-      className={`flex-none rounded-xl border border-loss bg-panel ${
+      className={`panel-opaque relative z-40 flex-none rounded-xl border border-loss ${
         compact ? 'mx-4 mb-2 px-3 py-2.5' : 'mx-6 mt-3 px-4 py-3'
       }`}
     >

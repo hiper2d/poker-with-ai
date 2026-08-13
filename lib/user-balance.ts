@@ -54,6 +54,48 @@ export async function deductBalance(email: string, amountUsd: number): Promise<b
   return success;
 }
 
+/**
+ * Credit the balance exactly once per Stripe event. The event claim, the credit and the
+ * free→paid upgrade commit in ONE transaction — a get-then-set idempotency check leaves
+ * a window where two concurrent deliveries of the same event both read "not processed"
+ * and both credit (it happened: two `stripe listen` forwarders on one endpoint).
+ * Returns false when the event was already processed.
+ */
+export async function creditBalanceOnce(
+  eventId: string,
+  email: string,
+  amountUsd: number,
+  meta: Record<string, unknown> = {},
+): Promise<boolean> {
+  if (!(amountUsd > 0)) throw new Error('Amount must be positive');
+  const eventRef = db.collection(COLLECTIONS.stripeEvents).doc(eventId);
+  const userRef = db.collection(COLLECTIONS.users).doc(email);
+  let credited = false;
+  await db.runTransaction(async (transaction) => {
+    credited = false;
+    const [eventSnap, userSnap] = await Promise.all([
+      transaction.get(eventRef),
+      transaction.get(userRef),
+    ]);
+    if (eventSnap.exists) return; // already processed — a retry or a duplicate delivery
+    if (!userSnap.exists) throw new Error(`User ${email} not found`);
+    const data = userSnap.data();
+    const update: { balance: number; tier?: UserTier } = {
+      balance: to6dp((Number(data?.balance) || 0) + amountUsd),
+    };
+    if (data?.tier !== USER_TIERS.PAID) update.tier = USER_TIERS.PAID;
+    transaction.update(userRef, update);
+    transaction.set(eventRef, {
+      userId: email,
+      amountUsd,
+      ...meta,
+      processedAt: new Date().toISOString(),
+    });
+    credited = true;
+  });
+  return credited;
+}
+
 /** Record spend in the user's monthly history (no balance change). */
 export async function updateUserMonthlySpending(
   email: string,

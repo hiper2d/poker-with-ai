@@ -172,10 +172,12 @@ export const SUPPORTED_MODELS: ModelConfig[] = [
     tags: ['expensive'],
   },
   {
+    // Repointed from gemini-3.6-flash 2026-08-13 (stable picker id, matching werewolf).
+    // NOTE if we ever send Gemini thinkingLevel: 3.7 rejects 'minimal' (low|medium|high only).
     id: 'gemini-flash',
-    displayName: 'Gemini 3.6 Flash',
+    displayName: 'Gemini 3.7 Flash',
     agentKind: 'google',
-    modelApiName: 'gemini-3.6-flash',
+    modelApiName: 'gemini-3.7-flash',
     apiKeyName: 'GOOGLE_API_KEY',
     hasThinking: true,
     maxOutputTokens: 16_384,

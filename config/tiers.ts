@@ -3,9 +3,8 @@
  * hand-tuned per model, so the two stay consistent (same scheme as werewolf). The metric
  * is output price ($/1M tokens), which dominates generation cost:
  *   <= $2  → unlimited bots
- *   <= $6  → up to FREE_TIER_LIMITED_MAX_BOTS bots
- *   <= $15 → 1 bot
- *   >  $15 → not available on the free tier
+ *   <= $6  → 1 bot
+ *   >  $6  → not available on the free tier
  *
  * Hybrid-thinking models (API offers a thinking toggle, we always run with reasoning on)
  * burn hidden reasoning tokens at the output rate, so their effective output price is
@@ -22,10 +21,8 @@ export const FREE_TIER_LIMITS = {
 
 export const FREE_TIER_OUTPUT_PRICE_BANDS = {
   UNLIMITED_MAX: 2,
-  LIMITED_MAX: 6,
-  SINGLE_MAX: 15,
+  SINGLE_MAX: 6,
 } as const;
-export const FREE_TIER_LIMITED_MAX_BOTS = 3;
 export const FREE_TIER_THINKING_COST_FACTOR = 2.5;
 
 /** Picker ids of hybrid-thinking models (pay the reasoning multiplier when banding).
@@ -74,8 +71,6 @@ export function getFreeTierPolicy(modelId: string): FreeTierPolicy {
 
   if (effectiveOutput <= FREE_TIER_OUTPUT_PRICE_BANDS.UNLIMITED_MAX)
     return { available: true, maxBotsPerGame: -1 };
-  if (effectiveOutput <= FREE_TIER_OUTPUT_PRICE_BANDS.LIMITED_MAX)
-    return { available: true, maxBotsPerGame: FREE_TIER_LIMITED_MAX_BOTS };
   if (effectiveOutput <= FREE_TIER_OUTPUT_PRICE_BANDS.SINGLE_MAX)
     return { available: true, maxBotsPerGame: 1 };
   return { available: false, maxBotsPerGame: 0 };

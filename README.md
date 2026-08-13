@@ -25,7 +25,7 @@ loser vent — before you deal the next one:
   event feed.
 - **Chat never blocks the game.** Table talk and betting run on two independent queues —
   banter with the table while the action continues.
-- **Six visual themes**, switchable live: parlor, pixel, flat, paper, terminal, sketch.
+- **Seven visual themes**, switchable live: parlor, pixel, neon, sumi, bauhaus, terminal, sketch.
 
 | | |
 |---|---|

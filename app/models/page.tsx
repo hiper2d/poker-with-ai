@@ -1,11 +1,7 @@
 import type { Metadata } from 'next';
 import ModelsCatalog from '@/components/ModelsCatalog';
 import { CapsLabel, Panel } from '@/components/ui';
-import {
-  FREE_TIER_LIMITED_MAX_BOTS,
-  FREE_TIER_OUTPUT_PRICE_BANDS,
-  FREE_TIER_THINKING_COST_FACTOR,
-} from '@/config/tiers';
+import { FREE_TIER_OUTPUT_PRICE_BANDS, FREE_TIER_THINKING_COST_FACTOR } from '@/config/tiers';
 
 export const metadata: Metadata = {
   title: 'Models — Poker with AI',
@@ -15,7 +11,6 @@ export const metadata: Metadata = {
 
 const PRICE_BANDS = [
   { range: `≤ $${FREE_TIER_OUTPUT_PRICE_BANDS.UNLIMITED_MAX}`, cap: 'Unlimited bots / game' },
-  { range: `≤ $${FREE_TIER_OUTPUT_PRICE_BANDS.LIMITED_MAX}`, cap: `Up to ${FREE_TIER_LIMITED_MAX_BOTS} bots / game` },
   { range: `≤ $${FREE_TIER_OUTPUT_PRICE_BANDS.SINGLE_MAX}`, cap: '1 bot / game' },
   { range: `> $${FREE_TIER_OUTPUT_PRICE_BANDS.SINGLE_MAX}`, cap: 'Paid only' },
 ];

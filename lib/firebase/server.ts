@@ -44,5 +44,6 @@ export const COLLECTIONS = {
   games: 'poker_games',
   users: 'poker_users',
   requestStats: 'poker_requestStats',
+  stripeEvents: 'poker_stripeEvents',
   config: 'config',
 } as const;
