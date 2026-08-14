@@ -27,9 +27,11 @@ export default async function NavBar() {
     <header className="sticky top-0 z-[45] border-b border-line bg-page">
       {/* fixed height (not padding-driven): the game screen subtracts it exactly, and any
           drift shows up as a page scrollbar on phones */}
-      <div className="mx-auto flex h-12 max-w-6xl items-center gap-3 px-4 sm:h-14 sm:gap-5 sm:px-5">
-        <Link href="/" className="flex flex-none items-baseline gap-2.5">
-          <span className="font-serif text-[22px] tracking-[0.04em] text-gold-pale sm:text-[26px]">Poker with AI</span>
+      <div className="mx-auto flex h-12 max-w-6xl items-center gap-2 px-3 sm:h-14 sm:gap-5 sm:px-5">
+        {/* min-w-0 + truncate, never flex-none: a logo that can't shrink overflows the row
+            in wide theme fonts, and any horizontal overflow makes phones zoom the page out */}
+        <Link href="/" className="flex min-w-0 items-baseline gap-2.5">
+          <span className="min-w-0 truncate font-serif text-[22px] tracking-[0.04em] text-gold-pale sm:text-[26px]">Poker with AI</span>
           {/* sacrificed on narrow screens so the session buttons stay on screen */}
           <span className="label-caps hidden text-[10px] md:inline">No-limit hold&rsquo;em</span>
         </Link>

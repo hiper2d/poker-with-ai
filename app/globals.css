@@ -354,6 +354,13 @@ body {
   box-shadow: var(--t-shadow);
 }
 
+/* Any horizontal overflow makes mobile browsers zoom the layout viewport out to fit the
+   widest element — every fixed/percent size then renders against the wrong width. Clip
+   (not hidden: clip creates no scroll container, so position:sticky keeps working). */
+html {
+  overflow-x: clip;
+}
+
 /* the table surface */
 .table-felt {
   position: relative;
