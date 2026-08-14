@@ -20,22 +20,28 @@ const getTheme = (): Theme => {
   return saved && THEMES.includes(saved) ? saved : 'parlor';
 };
 
-function apply(t: Theme) {
+/** Exported for the in-game menu sheet, which offers themes without this dropdown. */
+export function applyTheme(t: Theme) {
   if (t === 'parlor') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('poker-theme', t);
   for (const l of listeners) l();
 }
 
+/** Subscribe-able current theme — shared store with the dropdown. */
+export function useTheme(): Theme {
+  return useSyncExternalStore(subscribe, getTheme, () => 'parlor' as Theme);
+}
+
 export default function ThemeSwitcher() {
-  const theme = useSyncExternalStore(subscribe, getTheme, () => 'parlor' as Theme);
+  const theme = useTheme();
 
   return (
     <Dropdown ariaLabel="Theme" label={<span className="capitalize">{theme}</span>}>
       {THEMES.map((t) => (
         <button
           key={t}
-          onClick={() => apply(t)}
+          onClick={() => applyTheme(t)}
           className={`${DROPDOWN_ITEM} capitalize ${theme === t ? 'text-gold-pale' : ''}`}
         >
           {t}

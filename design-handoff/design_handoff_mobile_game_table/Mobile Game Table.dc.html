@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><script src="./ds-base.js"></script><style>html,body{margin:0;height:100%;overflow:hidden;background:#0a0d09;-webkit-text-size-adjust:100%}*{-webkit-tap-highlight-color:transparent}@keyframes bubblePop{from{opacity:0;transform:translateY(-6px) scale(.94)}to{opacity:1;transform:none}}@keyframes chipPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.45)}55%{opacity:1;transform:translate(-50%,-50%) scale(1.12)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}@keyframes rowIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@keyframes seatPulse{0%,100%{box-shadow:0 0 0 0 rgba(216,178,90,0)}50%{box-shadow:0 0 0 5px rgba(216,178,90,.16)}}@keyframes sheetFade{from{opacity:0}to{opacity:1}}</style></helmet>
+<div class="bg-page" style="position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;font-family:var(--font-dm-sans),system-ui,sans-serif;color:#cfd8c4">
+
+<div ref="{{ eventRef }}" style="{{ headerStyle }}">
+<button onClick="{{ toggleMenu }}" aria-label="Menu" style="flex:none;width:44px;height:44px;border-radius:13px;border:1px solid #2a3325;background:rgba(216,178,90,.08);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0">
+<span style="width:14px;height:1.5px;background:#ecd39a;border-radius:2px"></span>
+<span style="width:14px;height:1.5px;background:#ecd39a;border-radius:2px"></span>
+<span style="width:14px;height:1.5px;background:#ecd39a;border-radius:2px"></span></button>
+<button onClick="{{ toggleState }}" style="{{ stateChipStyle }}">
+<span style="width:6px;height:6px;border-radius:999px;background:#d8b25a;flex:none;box-shadow:0 0 8px 2px rgba(216,178,90,.45)"></span>
+<span style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#d8b25a;flex:none">{{ stageLabel }}</span>
+<span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7d8b6a;flex:none">{{ handNo }}</span></button>
+<div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;overflow:hidden">
+<span style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:17px;line-height:1.1;color:#ece5d3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ lastEvent }}</span>
+<span style="{{ eventTimeStyle }}">{{ lastEventTime }}</span></div>
+<button onClick="{{ toggleRun }}" aria-label="Play or pause" style="flex:none;width:44px;height:44px;border-radius:999px;border:1px solid #2a3325;background:rgba(216,178,90,.1);color:#ecd39a;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center">{{ runGlyph }}</button>
+<button onClick="{{ toggleLog }}" aria-label="Table talk" style="{{ talkBtnStyle }}">
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 3.6h11v7.2H7.2L4.1 13.4v-2.6H2.5z"></path></svg>
+<span style="{{ unreadDotStyle }}"></span></button></div>
+
+<div style="{{ mainStyle }}">
+<div ref="{{ areaRef }}" style="{{ areaStyle }}">
+<div ref="{{ tableRef }}" style="{{ tableBoxStyle }}">
+<x-import component-from-global-scope="PokerUI.TableFelt" hint-size="100%,100%">
+<div style="text-align:center">
+<div style="font-size:9px;text-transform:uppercase;letter-spacing:.24em;color:#a9c0ac">Pot</div>
+<div ref="{{ potRef }}" style="{{ potStyle }}">{{ potText }}</div></div>
+<div style="{{ boardStyle }}">
+<sc-for list="{{ board }}" as="c" hint-placeholder-count="5">
+<x-import component-from-global-scope="PokerUI.PlayingCard" card="{{ c }}" hint-size="54px,76px"></x-import></sc-for></div></x-import>
+<sc-for list="{{ seats }}" as="s" hint-placeholder-count="6">
+<div style="{{ s.style }}">
+<sc-if value="{{ s.active }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:-6px;border-radius:999px;border:1px solid rgba(216,178,90,.55);box-shadow:0 0 18px 3px rgba(216,178,90,.22);animation:seatPulse 1.6s ease-in-out infinite;pointer-events:none"></div></sc-if>
+<x-import component-from-global-scope="PokerUI.SeatPill" name="{{ s.name }}" stack="{{ s.stack }}" avatar-color="{{ s.color }}" tag="{{ s.tag }}" last-action="{{ s.lastAction }}" active="{{ s.active }}" folded="{{ s.folded }}" dimmed="{{ s.dimmed }}" is-human="{{ s.isHuman }}" dealer="{{ s.dealer }}" hint-size="150px,52px"></x-import></div></sc-for>
+<sc-for list="{{ bubbles }}" as="b" hint-placeholder-count="0">
+<div style="{{ b.style }}">
+<x-import component-from-global-scope="PokerUI.ChatBubble" author="{{ b.name }}" author-color="{{ b.color }}" hint-size="100%,44px">{{ b.msg }}</x-import></div></sc-for>
+<sc-for list="{{ chipStacks }}" as="b" hint-placeholder-count="0">
+<div style="{{ b.style }}">
+<span style="display:flex;align-items:center">
+<span style="width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#e6c477,#b98f3c);border:1px solid rgba(0,0,0,.5)"></span>
+<span style="width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#e6c477,#b98f3c);border:1px solid rgba(0,0,0,.5);margin-left:-5px"></span></span>
+<span style="font-size:10px;color:#ecd39a;font-variant-numeric:tabular-nums">{{ b.amount }}</span></div></sc-for></div></div>
+
+<div onClick="{{ toggleLog }}" style="{{ chatterStyle }}">
+<div style="display:flex;align-items:center;gap:8px;flex:none;margin-bottom:6px">
+<span style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">Table talk</span>
+<span style="flex:1;height:1px;background:#1b2117"></span>
+<span style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#5f6d52">Tap to open</span></div>
+<div style="display:flex;flex-direction:column;gap:7px;overflow:hidden;flex:1;justify-content:flex-end">
+<sc-for list="{{ recent }}" as="m" hint-placeholder-count="2">
+<x-import component-from-global-scope="PokerUI.ChatBubble" author="{{ m.author }}" author-color="{{ m.color }}" mine="{{ m.mine }}" system="{{ m.system }}" hint-size="100%,44px">{{ m.text }}</x-import></sc-for></div></div>
+
+<div style="{{ actionBarStyle }}">
+<div style="{{ handRowStyle }}">
+<span style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a;flex:none">Your hand</span>
+<div style="{{ heroCardsStyle }}">
+<sc-for list="{{ heroCards }}" as="c" hint-placeholder-count="2">
+<x-import component-from-global-scope="PokerUI.PlayingCard" card="{{ c }}" hint-size="54px,76px"></x-import></sc-for></div>
+<div style="{{ spacerStyle }}"></div>
+<div style="{{ stackBlockStyle }}">
+<div style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">Stack</div>
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:17px;line-height:1.1;color:#efe2c0;font-variant-numeric:tabular-nums">{{ heroStack }}</div></div></div>
+<div style="{{ buttonRowStyle }}">
+<x-import component-from-global-scope="PokerUI.Button" variant="dark" class="btn-dark min-h-[52px] px-4 text-sm w-full" onClick="{{ heroFold }}" hint-size="100%,52px">Fold</x-import>
+<x-import component-from-global-scope="PokerUI.Button" variant="moss" class="btn-moss min-h-[52px] px-4 text-sm w-full" onClick="{{ heroCall }}" hint-size="100%,52px">{{ callLabel }}</x-import>
+<x-import component-from-global-scope="PokerUI.Button" variant="gold" class="btn-gold min-h-[52px] px-4 text-sm w-full" onClick="{{ heroRaise }}" hint-size="100%,52px">{{ raiseLabel }}</x-import></div></div></div>
+
+<sc-if value="{{ logOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ toggleLog }}" style="{{ scrimStyle }}"></div>
+<div style="{{ sheetStyle }}">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;flex:none">
+<div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#7d8b6a">Table talk</div>
+<div style="display:flex;gap:6px;align-items:center">
+<button onClick="{{ toggleLogSection }}" style="{{ eventsBtnStyle }}">Events {{ logCount }}</button>
+<button onClick="{{ toggleLog }}" style="background:none;border:1px solid #2a3325;border-radius:999px;color:#94a68f;font-size:11px;min-height:44px;padding:0 16px;cursor:pointer;font-family:inherit">Close</button></div></div>
+<div ref="{{ chatRef }}" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 14px 10px;display:flex;flex-direction:column;gap:8px">
+<sc-for list="{{ feed }}" as="m" hint-placeholder-count="5">
+<sc-if value="{{ m.isMsg }}" hint-placeholder-val="{{ true }}">
+<x-import component-from-global-scope="PokerUI.ChatBubble" author="{{ m.author }}" author-color="{{ m.color }}" mine="{{ m.mine }}" system="{{ m.system }}" hint-size="100%,48px">{{ m.text }}</x-import></sc-if>
+<sc-if value="{{ m.isEvent }}" hint-placeholder-val="{{ false }}">
+<div style="{{ m.rowStyle }}">
+<span style="font-size:9px;color:#4d5a41;font-variant-numeric:tabular-nums;flex:none;padding-top:1px">{{ m.time }}</span>
+<span style="{{ m.textStyle }}">{{ m.text }}</span></div></sc-if></sc-for></div>
+<div style="flex:none;display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid #1b2117;padding-bottom:max(10px,env(safe-area-inset-bottom))">
+<input value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onDraftKey }}" placeholder="Say something…" style="flex:1;min-width:0;background:rgba(12,16,11,.9);border:1px solid #2a3325;border-radius:999px;min-height:44px;padding:11px 16px;color:#e8f0dd;font-size:14px;font-family:inherit;outline:none" style-focus="border-color:#d8b25a">
+<button onClick="{{ send }}" style="flex:none;width:44px;height:44px;border-radius:999px;border:1px solid #3f4a35;background:rgba(216,178,90,.14);color:#ecd39a;font-size:17px;cursor:pointer">›</button></div></div></sc-if>
+
+<sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ toggleMenu }}" style="position:absolute;inset:0;background:rgba(4,6,4,.6);z-index:70"></div>
+<div style="{{ menuStyle }}">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px">
+<span style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:20px;color:#ece5d3">Parlor</span>
+<span style="font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#241a08;background:#d8b25a;border-radius:999px;padding:3px 9px">{{ tier }}</span></div>
+<sc-for list="{{ menuItems }}" as="m" hint-placeholder-count="5">
+<button style="{{ m.style }}">{{ m.label }}</button></sc-for>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 4px 2px;border-top:1px solid #1b2117;margin-top:8px">
+<span style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">Theme</span>
+<div style="display:flex;gap:6px">
+<sc-for list="{{ themes }}" as="t" hint-placeholder-count="3">
+<button class="{{ t.cls }}" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.name }}</button></sc-for></div></div>
+<button onClick="{{ toggleMenu }}" style="margin-top:12px;background:none;border:1px solid #2a3325;border-radius:999px;color:#94a68f;font-size:11px;letter-spacing:.14em;text-transform:uppercase;min-height:48px;padding:0;cursor:pointer;font-family:inherit;width:100%">Back to table</button></div></sc-if>
+
+<sc-if value="{{ stateOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ toggleState }}" style="position:absolute;inset:0;background:rgba(4,6,4,.65);z-index:70"></div>
+<div style="{{ stateDialogStyle }}">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+<span style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:22px;line-height:1;color:#ece5d3;white-space:nowrap">Hand {{ handNo }}</span>
+<span style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d8b25a">{{ stageLabel }}</span></div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:12px 0 4px">
+<div><div style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">Pot</div>
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:20px;line-height:1.2;color:#efe2c0;font-variant-numeric:tabular-nums">{{ potText }}</div></div>
+<div><div style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">Blinds</div>
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:20px;line-height:1.2;color:#efe2c0;font-variant-numeric:tabular-nums">100 · 200</div></div>
+<div><div style="font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d8b6a">To call</div>
+<div style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:20px;line-height:1.2;color:#efe2c0;font-variant-numeric:tabular-nums">900</div></div></div>
+<div style="display:flex;flex-direction:column;gap:7px;padding-top:10px;border-top:1px solid #1b2117;margin-top:6px">
+<sc-for list="{{ roster }}" as="r" hint-placeholder-count="6">
+<div style="{{ r.rowStyle }}">
+<span style="{{ r.dotStyle }}"></span>
+<span style="font-family:var(--font-instrument-serif),Georgia,serif;font-size:16px;color:#ece5d3;flex:none">{{ r.name }}</span>
+<span style="font-size:10px;letter-spacing:.06em;color:#7d8b6a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ r.tag }}</span>
+<span style="{{ r.actStyle }}">{{ r.act }}</span>
+<span style="font-size:13px;color:#d8b25a;font-variant-numeric:tabular-nums;flex:none">{{ r.stack }}</span></div></sc-for></div>
+<button onClick="{{ toggleState }}" style="margin-top:14px;background:none;border:1px solid #2a3325;border-radius:999px;color:#94a68f;font-size:11px;letter-spacing:.14em;text-transform:uppercase;min-height:48px;padding:0;cursor:pointer;font-family:inherit;width:100%">Close</button></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;autoplay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;taunts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;speed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2400,&quot;min&quot;:1200,&quot;max&quot;:4000,&quot;step&quot;:200,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Behavior&quot;},&quot;seatTags&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;logOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+const SEATS = [
+  { name: 'Riley', tag: '', color: '#d8b25a', stack: 12450, isHuman: true },
+  { name: 'Nova', tag: 'Claude Sonnet', color: '#5c8f7b', stack: 18240 },
+  { name: 'Duke', tag: 'DeepSeek V4', color: '#8d6a3f', stack: 9400 },
+  { name: 'Kiko', tag: 'Grok 4.5', color: '#a35f6d', stack: 4200 },
+  { name: 'Vex', tag: 'GPT-5', color: '#6b7fa8', stack: 15100 },
+  { name: 'Halo', tag: 'Gemini 3', color: '#9a8bb0', stack: 7800 }
+];
+
+// seat ring, per orientation (percent of the table box)
+// anchor: 'c' centred on the point, 'l' extends right from it, 'r' extends left from it
+const RING = {
+  portrait: [
+    { left: 50, top: 104, a: 'c' }, { left: 1, top: 64, a: 'l' }, { left: 15, top: -8, a: 'c' },
+    { left: 50, top: -16, a: 'c' }, { left: 85, top: -8, a: 'c' }, { left: 99, top: 64, a: 'r' }
+  ],
+  landscape: [
+    { left: 50, top: 104, a: 'c' }, { left: 1, top: 52, a: 'l' }, { left: 20, top: -8, a: 'c' },
+    { left: 50, top: -16, a: 'c' }, { left: 80, top: -8, a: 'c' }, { left: 99, top: 52, a: 'r' }
+  ]
+};
+// vertical seat overhang as a fraction of table height, plus a fixed pill allowance
+const OVER_TOP = 0.2, OVER_BOT = 0.08, PILL_PAD = 30;
+const FELT_R = 1.62; // .table-felt aspect-ratio
+
+const SCRIPT = [
+  { i: 1, act: 'raise', amt: 600, msg: 'Your sizing tells me more than your face does.' },
+  { i: 2, act: 'fold' },
+  { i: 3, act: 'call', amt: 600, msg: 'I like round numbers.' },
+  { i: 4, act: 'fold', msg: 'Not tonight.' },
+  { i: 5, act: 'call', amt: 600 },
+  { i: 0, act: 'call', amt: 600 },
+  { stage: 'flop', board: ['Ah', 'Kd', '7c'] },
+  { i: 1, act: 'bet', amt: 900, msg: 'Ace-king board. Someone here is lying.' },
+  { i: 5, act: 'call', amt: 900, msg: 'Paying to see one more.' },
+  { i: 0, act: 'call', amt: 900 },
+  { stage: 'turn', board: ['Ah', 'Kd', '7c', '2s'] },
+  { i: 1, act: 'check', msg: 'Your turn to bleed.' },
+  { i: 5, act: 'bet', amt: 1800 },
+  { i: 0, act: 'fold' },
+  { i: 1, act: 'call', amt: 1800, msg: 'Curiosity is a tax I can afford.' },
+  { stage: 'river', board: ['Ah', 'Kd', '7c', '2s', 'Kh'] },
+  { i: 1, act: 'check' },
+  { i: 5, act: 'bet', amt: 3200, msg: 'All of it. Or none of it.' },
+  { i: 1, act: 'fold', msg: 'Well played. This time.' },
+  { stage: 'showdown', win: 5 }
+];
+
+const MSG_MS = 4600;
+const CHIP = { bet: '#d8b25a', raise: '#d8b25a', call: '#7fbf6a', check: '#94a68f', fold: '#8a6f66' };
+
+class Component extends DCLogic {
+  tableRef = React.createRef();
+  areaRef = React.createRef();
+  chatRef = React.createRef();
+  potRef = React.createRef();
+  eventRef = React.createRef();
+  timers = [];
+  state = {
+    idx: 0,
+    handNo: 41,
+    stage: 'preflop',
+    board: [],
+    pot: 300,
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+    seats: SEATS.map((s, k) => ({ ...s, lastAction: '', folded: false, active: false, dealer: k === 2, msg: '', bet: k === 3 ? 100 : k === 4 ? 200 : 0 })),
+    log: [],
+    feed: [{ kind: 'msg', author: 'GM', system: 'plain', text: 'Five models and one human. Nobody folds out of politeness.' }],
+    draft: '',
+    logExpanded: true,
+    lastEvent: 'Blinds posted — 100 / 200',
+    lastEventTime: this.clock(),
+    running: this.props.autoplay ?? true,
+    logOpen: this.props.logOpen ?? false,
+    menuOpen: false,
+    stateOpen: false,
+    theme: 'Parlor',
+    unread: 0
+  };
+
+  clock() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  componentDidMount() {
+    this.measure();
+    this.ro = new ResizeObserver(this.measure);
+    if (this.areaRef.current) this.ro.observe(this.areaRef.current);
+    window.addEventListener('resize', this.measure);
+    window.addEventListener('orientationchange', this.measure);
+    this.tick();
+  }
+  componentWillUnmount() {
+    this.timers.forEach(clearTimeout);
+    clearTimeout(this.loop);
+    if (this.ro) this.ro.disconnect();
+    window.removeEventListener('resize', this.measure);
+    window.removeEventListener('orientationchange', this.measure);
+  }
+
+  measure = () => {
+    const el = this.areaRef.current;
+    if (!el) return;
+    const portrait = window.innerHeight >= window.innerWidth;
+    const w = el.clientWidth - 16;
+    const h = el.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    // the felt is locked to 1.62 by the design system — match the box to it exactly
+    // so the seat ring hugs the rim, and reserve the ring's overhang before sizing
+    const hFit = Math.max(110, (h - 2 * PILL_PAD) / (1 + OVER_TOP + OVER_BOT));
+    const tw = Math.round(Math.min(w, hFit * FELT_R));
+    const th = Math.round(tw / FELT_R);
+    const next = { tableW: Math.round(tw), tableH: Math.round(th), vw: window.innerWidth, vh: window.innerHeight };
+    if (next.tableW !== this.state.tableW || next.tableH !== this.state.tableH || next.vw !== this.state.vw || next.vh !== this.state.vh) this.setState(next);
+  };
+
+  tick = () => {
+    clearTimeout(this.loop);
+    if (!this.state.running) return;
+    this.loop = setTimeout(() => { this.step(); this.tick(); }, this.props.speed ?? 2400);
+  };
+
+  pushEvent(text, kind) {
+    const time = this.clock();
+    this.setState(s => ({ lastEvent: text, lastEventTime: time, log: [{ text, kind, time }, ...s.log].slice(0, 60), feed: [...s.feed, { kind: 'event', act: kind, text, time }].slice(-60) }));
+    const el = this.eventRef.current;
+    if (el && el.animate) el.animate([{ transform: 'translateY(5px)', opacity: 0.4 }, { transform: 'none', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(.2,.8,.3,1)' });
+  }
+
+  ring() { return RING[this.portrait() ? 'portrait' : 'landscape']; }
+  portrait() { return this.state.vh >= this.state.vw; }
+
+  stackPos(i) {
+    const p = this.ring()[i];
+    return { left: p.left + (50 - p.left) * 0.26, top: p.top + (50 - p.top) * 0.24 };
+  }
+
+  sweepToPot() {
+    const host = this.tableRef.current;
+    if (!host) return;
+    this.state.seats.forEach((p, i) => {
+      if (!(p.bet > 0)) return;
+      const from = this.stackPos(i);
+      const chip = document.createElement('div');
+      Object.assign(chip.style, {
+        position: 'absolute', left: from.left + '%', top: from.top + '%', transform: 'translate(-50%,-50%)',
+        width: '20px', height: '20px', borderRadius: '50%',
+        background: 'radial-gradient(circle at 50% 35%,#e6c477,#b98f3c)', border: '1px solid rgba(0,0,0,.5)',
+        boxShadow: '0 6px 14px -6px rgba(0,0,0,.9)', pointerEvents: 'none', zIndex: '38',
+        transition: 'all 460ms cubic-bezier(.4,.85,.3,1)'
+      });
+      host.appendChild(chip);
+      requestAnimationFrame(() => {
+        chip.style.left = '50%';
+        chip.style.top = '48%';
+        chip.style.opacity = '0';
+        chip.style.transform = 'translate(-50%,-50%) scale(.4)';
+      });
+      this.timers.push(setTimeout(() => chip.remove(), 600));
+    });
+    this.timers.push(setTimeout(() => {
+      const pot = this.potRef.current;
+      if (pot && pot.animate) pot.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.14)', color: '#ffe9b0' }, { transform: 'scale(1)' }], { duration: 500, easing: 'ease-out' });
+    }, 440));
+  }
+
+  flyChips(seatIdx, amount, color) {
+    const host = this.tableRef.current;
+    if (!host) return;
+    const s = this.ring()[seatIdx];
+    const to = this.stackPos(seatIdx);
+    for (let n = 0; n < 3; n++) {
+      const chip = document.createElement('div');
+      Object.assign(chip.style, {
+        position: 'absolute', left: s.left + '%', top: s.top + '%',
+        transform: 'translate(-50%,-50%) scale(.5)',
+        width: '14px', height: '14px', borderRadius: '50%',
+        background: 'radial-gradient(circle at 50% 35%,#e6c477,#b98f3c)',
+        border: '1px solid rgba(0,0,0,.55)', zIndex: 40,
+        boxShadow: '0 6px 14px -6px rgba(0,0,0,.9)', pointerEvents: 'none', opacity: '0',
+        transition: 'all 440ms cubic-bezier(.25,.9,.3,1) ' + (n * 80) + 'ms'
+      });
+      host.appendChild(chip);
+      requestAnimationFrame(() => {
+        chip.style.opacity = '1';
+        chip.style.left = 'calc(' + to.left + '% + ' + (n * 5 - 9) + 'px)';
+        chip.style.top = 'calc(' + to.top + '% + ' + (n % 2 ? -2 : 1) + 'px)';
+        chip.style.transform = 'translate(-50%,-50%) scale(1)';
+      });
+      this.timers.push(
+        setTimeout(() => { chip.style.transition = 'opacity 160ms ease-out'; chip.style.opacity = '0'; }, 500 + n * 80),
+        setTimeout(() => chip.remove(), 740 + n * 80)
+      );
+    }
+    const badge = document.createElement('div');
+    badge.textContent = (color === CHIP.fold ? '' : '+') + amount.toLocaleString();
+    Object.assign(badge.style, {
+      position: 'absolute', left: s.left + '%', top: 'calc(' + s.top + '% - 24px)',
+      transform: 'translate(-50%,0)', color: color, fontSize: '12px', fontVariantNumeric: 'tabular-nums',
+      zIndex: 41, pointerEvents: 'none', opacity: '0', whiteSpace: 'nowrap',
+      textShadow: '0 2px 8px rgba(0,0,0,.9)', transition: 'all 600ms cubic-bezier(.25,.9,.3,1)'
+    });
+    host.appendChild(badge);
+    requestAnimationFrame(() => { badge.style.opacity = '1'; badge.style.top = 'calc(' + s.top + '% - 38px)'; });
+    this.timers.push(
+      setTimeout(() => { badge.style.opacity = '0'; }, 620),
+      setTimeout(() => badge.remove(), 980)
+    );
+  }
+
+  pushChat(entry) {
+    this.setState(s => ({
+      feed: [...s.feed, { ...entry, kind: 'msg' }].slice(-60),
+      unread: s.logOpen || entry.mine ? s.unread : s.unread + 1
+    }));
+  }
+
+  say(idx, msg) {
+    if (!(this.props.taunts ?? true) || !msg) return;
+    const p0 = SEATS[idx];
+    this.pushChat({ author: p0.name + (p0.tag ? ' · ' + p0.tag : ''), color: p0.color, text: msg });
+    this.setState(s => ({ seats: s.seats.map((p, k) => k === idx ? { ...p, msg } : p) }));
+    this.timers.push(setTimeout(() => this.setState(s => ({ seats: s.seats.map((p, k) => k === idx && p.msg === msg ? { ...p, msg: '' } : p) })), MSG_MS));
+  }
+
+  step = () => {
+    const st = SCRIPT[this.state.idx];
+    const next = (this.state.idx + 1) % SCRIPT.length;
+
+    if (st.stage === 'showdown') {
+      this.sweepToPot();
+      const w = this.state.seats[st.win];
+      this.pushEvent(w.name + ' wins ' + this.state.pot.toLocaleString(), 'win');
+      this.pushChat({ author: 'GM', system: 'highlight', text: w.name + ' wins ' + this.state.pot.toLocaleString() + ' with a full house, kings over sevens.' });
+      this.say(st.win, 'Told you. Patience is a strategy.');
+      this.timers.push(setTimeout(() => this.newHand(), 2200));
+      this.setState({ idx: next });
+      return;
+    }
+    if (st.stage) {
+      this.sweepToPot();
+      this.setState(s => ({ idx: next, stage: st.stage, board: st.board, seats: s.seats.map(p => ({ ...p, active: false, bet: 0, lastAction: p.folded ? p.lastAction : '' })) }));
+      this.pushEvent(st.stage[0].toUpperCase() + st.stage.slice(1) + ' — ' + st.board.join(' '), 'stage');
+      return;
+    }
+
+    const seat = this.state.seats[st.i];
+    const amt = st.amt || 0;
+    const label = st.act + (amt ? ' ' + amt.toLocaleString() : '');
+    this.setState(s => ({
+      idx: next,
+      pot: s.pot + amt,
+      seats: s.seats.map((p, k) => k === st.i
+        ? { ...p, stack: p.stack - amt, bet: st.act === 'fold' ? 0 : (p.bet || 0) + amt, lastAction: label, folded: st.act === 'fold' ? true : p.folded, dimmed: st.act === 'fold' ? true : p.dimmed, active: true }
+        : { ...p, active: false })
+    }));
+    const verb = { raise: 'raises to', bet: 'bets', call: 'calls', check: 'checks', fold: 'folds' }[st.act];
+    this.pushEvent(seat.name + ' ' + verb + (amt ? ' ' + amt.toLocaleString() : ''), st.act);
+    if (amt) this.flyChips(st.i, amt, CHIP[st.act] || '#d8b25a');
+    this.say(st.i, st.msg);
+  };
+
+  newHand = () => {
+    this.setState(s => ({
+      idx: 0, handNo: s.handNo + 1, stage: 'preflop', board: [], pot: 300,
+      seats: s.seats.map((p, k) => ({ ...p, lastAction: '', folded: false, dimmed: false, active: false, msg: '', bet: k === 3 ? 100 : k === 4 ? 200 : 0, dealer: k === (s.seats.findIndex(x => x.dealer) + 1) % 6 }))
+    }));
+    this.pushEvent('New hand dealt — blinds 100 / 200', 'stage');
+  };
+
+  componentDidUpdate() {
+    if (this._lastFeed !== this.state.feed) {
+      this._lastFeed = this.state.feed;
+      const el = this.chatRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+    if (this._lastLogOpen !== this.state.logOpen) {
+      this._lastLogOpen = this.state.logOpen;
+      this.measure();
+    }
+  }
+
+  toggleRun = () => this.setState(s => ({ running: !s.running }), this.tick);
+  toggleLog = () => this.setState(s => ({ logOpen: !s.logOpen, unread: 0, menuOpen: false, stateOpen: false }));
+  toggleMenu = () => this.setState(s => ({ menuOpen: !s.menuOpen, stateOpen: false }));
+  toggleState = () => this.setState(s => ({ stateOpen: !s.stateOpen, menuOpen: false }));
+  pickTheme = t => () => this.setState({ theme: t });
+  toggleLogSection = () => this.setState(s => ({ logExpanded: !s.logExpanded }));
+  onDraft = e => this.setState({ draft: e.target.value });
+  onDraftKey = e => { if (e.key === 'Enter') this.send(); };
+  send = () => {
+    const t = this.state.draft.trim();
+    if (!t) return;
+    this.setState({ draft: '' });
+    this.pushChat({ author: 'You', mine: true, text: t });
+  };
+
+  heroAct = (act, amt) => {
+    const label = act + (amt ? ' ' + amt.toLocaleString() : '');
+    this.setState(s => ({
+      pot: s.pot + (amt || 0),
+      seats: s.seats.map((p, k) => k === 0 ? { ...p, stack: p.stack - (amt || 0), bet: act === 'fold' ? 0 : (p.bet || 0) + (amt || 0), lastAction: label, folded: act === 'fold', dimmed: act === 'fold', active: false } : p)
+    }));
+    this.pushEvent('You ' + ({ fold: 'fold', call: 'call', raise: 'raise to' }[act]) + (amt ? ' ' + amt.toLocaleString() : ''), act);
+    if (amt) this.flyChips(0, amt, CHIP[act] || '#d8b25a');
+  };
+
+  renderVals() {
+    const s = this.state;
+    const portrait = this.portrait();
+    const tw = s.tableW || (portrait ? 300 : 420);
+    const th = s.tableH || tw / 1.35;
+    const ring = this.ring();
+    const showTags = (this.props.seatTags ?? false) && tw > 380;
+    // seat pills scale so six of them ring a phone-sized felt without clipping
+    const k = Math.max(0.52, Math.min(0.92, tw / 620));
+    const gutter = portrait ? 40 : 46;
+
+    const seats = s.seats.map((p, i) => {
+      const pos = ring[i];
+      const shiftX = pos.a === 'l' ? '0' : pos.a === 'r' ? '-100%' : '-50%';
+      return {
+        ...p,
+        tag: showTags ? p.tag : '',
+        style: {
+          position: 'absolute', left: pos.left + '%', top: pos.top + '%',
+          transform: 'translate(' + shiftX + ',-50%) scale(' + k.toFixed(3) + ')',
+          transformOrigin: pos.a === 'l' ? 'left center' : pos.a === 'r' ? 'right center' : 'center',
+          zIndex: p.msg ? 30 : 20
+        }
+      };
+    });
+
+    // speech bubbles live in their own unscaled layer, clamped inside the table box
+    const bw = Math.round(Math.min(232, Math.max(160, tw * 0.62)));
+    const pillH = 52 * k;
+    const bubbles = s.seats.map((p, i) => ({ p, i })).filter(x => x.p.msg).map(({ p, i }) => {
+      const pos = ring[i];
+      const cx = (pos.left / 100) * tw, cy = (pos.top / 100) * th;
+      const left = Math.max(2, Math.min(tw - bw - 2, cx - bw / 2));
+      const below = pos.top < 55;
+      return {
+        name: p.name, color: p.color, msg: p.msg,
+        style: {
+          position: 'absolute', width: bw, left: Math.round(left), zIndex: 36,
+          top: Math.round(below ? cy + pillH / 2 + 6 : cy - pillH / 2 - 6),
+          transform: below ? 'none' : 'translateY(-100%)',
+          animation: 'bubblePop .28s cubic-bezier(.2,.8,.3,1) both'
+        }
+      };
+    });
+
+    const kindColor = { win: '#d6bd85', stage: '#a08a53', fold: '#6d6055' };
+    const chipStacks = s.seats.filter(p => p.bet > 0).map((p) => {
+      const i = s.seats.indexOf(p);
+      const pos = ring[i];
+      return {
+        amount: p.bet.toLocaleString(),
+        style: {
+          position: 'absolute',
+          left: (pos.left + (50 - pos.left) * 0.6) + '%',
+          top: (pos.top + (50 - pos.top) * 0.5) + '%',
+          transform: 'translate(-50%,-50%)',
+          display: 'flex', alignItems: 'center', gap: 5, padding: '2px 7px 2px 4px',
+          borderRadius: 999, background: 'rgba(8,12,8,.8)', border: '1px solid rgba(216,178,90,.3)',
+          zIndex: 12, whiteSpace: 'nowrap', animation: 'chipPop .42s cubic-bezier(.2,.9,.3,1) both'
+        }
+      };
+    });
+
+    const boardScale = Math.max(0.6, Math.min(1, (tw - 40) / 320));
+    const heroScale = portrait ? 0.92 : 0.66;
+
+    return {
+      // one bar in-game: menu, a state chip that opens the full state, the live event, controls
+      headerStyle: {
+        flex: 'none', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+        padding: portrait ? 'max(8px,env(safe-area-inset-top)) 12px 9px' : '7px 14px',
+        borderBottom: '1px solid #232b1e', background: 'linear-gradient(90deg,rgba(31,59,46,.35),rgba(20,24,15,0))'
+      },
+      stateChipStyle: {
+        flex: 'none', display: 'flex', alignItems: 'center', gap: 7, minHeight: 44,
+        padding: '0 14px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+        border: '1px solid ' + (s.stateOpen ? '#d8b25a' : '#2a3325'),
+        background: s.stateOpen ? 'rgba(216,178,90,.14)' : 'rgba(12,16,11,.6)'
+      },
+      eventTimeStyle: {
+        display: portrait ? 'none' : 'block', flex: 'none',
+        fontSize: 9, letterSpacing: '.08em', color: '#7d8b6a', fontVariantNumeric: 'tabular-nums'
+      },
+      talkBtnStyle: {
+        position: 'relative', flex: 'none', width: 44, height: 44, borderRadius: 999,
+        border: '1px solid ' + (s.logOpen ? '#d8b25a' : '#2a3325'),
+        background: s.logOpen ? 'rgba(216,178,90,.14)' : 'none',
+        color: s.logOpen ? '#ecd39a' : '#94a68f', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+      },
+      unreadDotStyle: {
+        display: s.unread && !s.logOpen ? 'block' : 'none',
+        position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 999,
+        background: '#d8b25a', boxShadow: '0 0 8px 2px rgba(216,178,90,.5)'
+      },
+      menuOpen: s.menuOpen,
+      stateOpen: s.stateOpen,
+      tier: 'Paid',
+      toggleMenu: this.toggleMenu,
+      toggleState: this.toggleState,
+      menuItems: ['Tables', 'Host a table', 'Models', 'Rules', 'Profile', 'Leave table'].map((label, i) => ({
+        label,
+        style: {
+          width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-instrument-serif),Georgia,serif', fontSize: 19, minHeight: 48, padding: '12px 4px',
+          color: i === 5 ? '#8a6f66' : '#ece5d3', borderTop: i ? '1px solid #1b2117' : 'none'
+        }
+      })),
+      themes: ['Parlor', 'Pixel', 'Sumi'].map(name => ({
+        name, pick: this.pickTheme(name),
+        cls: s.theme === name ? 'pill pill-on' : 'pill',
+        style: { minHeight: 44, padding: '0 16px', cursor: 'pointer' }
+      })),
+      menuStyle: {
+        position: 'absolute', zIndex: 71, display: 'flex', flexDirection: 'column',
+        top: portrait ? 'max(10px,env(safe-area-inset-top))' : 10, left: 12,
+        width: Math.min(300, s.vw - 24), maxHeight: s.vh - 40, overflowY: 'auto',
+        padding: '14px 14px 14px', borderRadius: 18, border: '1px solid #2a3325',
+        background: 'rgba(10,13,9,.98)', boxShadow: '0 30px 60px -20px rgba(0,0,0,.9)',
+        animation: 'sheetFade .2s ease-out both'
+      },
+      stateDialogStyle: {
+        position: 'absolute', zIndex: 71, left: '50%', top: '50%',
+        transform: 'translate(-50%,-50%)',
+        width: Math.min(400, s.vw - 24), maxHeight: s.vh - 28, overflowY: 'auto',
+        padding: '16px 16px 16px', borderRadius: 18, border: '1px solid #3a4430',
+        background: 'rgba(10,13,9,.98)', boxShadow: '0 30px 60px -20px rgba(0,0,0,.9)',
+        animation: 'sheetFade .2s ease-out both'
+      },
+      roster: s.seats.map(p => ({
+        name: p.name,
+        tag: p.isHuman ? 'you' : p.tag,
+        act: p.lastAction || '—',
+        stack: p.stack.toLocaleString(),
+        rowStyle: { display: 'flex', alignItems: 'baseline', gap: 8, opacity: p.folded ? 0.45 : 1 },
+        dotStyle: { width: 7, height: 7, borderRadius: 999, background: p.active ? '#d8b25a' : p.folded ? '#3f4a35' : p.color, flex: 'none' },
+        actStyle: {
+          fontSize: 9, letterSpacing: '.14em', textTransform: 'uppercase', flex: 'none',
+          color: p.folded ? '#8a6f66' : '#7fbf6a'
+        }
+      })),
+      // landscape has room for one panel at a time: chat takes the action rail's place
+      mainStyle: {
+        flex: 1, minHeight: 0, minWidth: 0, display: 'flex',
+        flexDirection: portrait ? 'column' : 'row', gap: portrait ? 0 : 10,
+        padding: portrait ? '0' : (!portrait && s.logOpen ? '0 344px 6px 14px' : '0 14px 6px')
+      },
+      scrimStyle: {
+        display: portrait ? 'block' : 'none',
+        position: 'absolute', inset: 0, background: 'rgba(4,6,4,.6)', zIndex: 60
+      },
+      areaStyle: { flex: 1, minHeight: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+      tableBoxStyle: {
+        position: 'relative', width: tw, height: th, flex: 'none',
+        // nudge down so the taller top overhang clears the banner
+        marginTop: Math.round(th * (OVER_TOP - OVER_BOT) / 2)
+      },
+      potStyle: { fontFamily: 'var(--font-instrument-serif),Georgia,serif', fontSize: Math.round(Math.max(26, Math.min(44, tw / 8))), lineHeight: 1, color: '#efe2c0', fontVariantNumeric: 'tabular-nums' },
+      boardStyle: { display: 'flex', gap: 6, alignItems: 'center', minHeight: 76 * boardScale, transform: 'scale(' + boardScale.toFixed(2) + ')' },
+      heroCardsStyle: { display: 'flex', gap: 5, transform: 'scale(' + heroScale + ')', transformOrigin: 'left center', width: 118 * heroScale, flex: 'none' },
+      actionBarStyle: {
+        flex: 'none', display: !portrait && s.logOpen ? 'none' : 'flex', flexDirection: 'column', gap: 10,
+        width: portrait ? 'auto' : 168,
+        justifyContent: portrait ? 'flex-start' : 'center',
+        padding: portrait ? '4px 12px max(12px,env(safe-area-inset-bottom))' : '0',
+        borderTop: portrait ? '1px solid #1b2117' : 'none',
+        borderLeft: portrait ? 'none' : '1px solid #1b2117',
+        paddingLeft: portrait ? 12 : 14
+      },
+      spacerStyle: { flex: portrait ? 1 : 'none', display: portrait ? 'block' : 'none' },
+      stackBlockStyle: { flex: 'none', textAlign: portrait ? 'right' : 'left' },
+      handRowStyle: {
+        display: 'flex', minWidth: 0, gap: portrait ? 10 : 6,
+        flexDirection: portrait ? 'row' : 'column',
+        alignItems: portrait ? 'center' : 'flex-start'
+      },
+      buttonRowStyle: { display: 'flex', flexDirection: portrait ? 'row' : 'column', gap: 8 },
+      sheetStyle: {
+        position: 'absolute', zIndex: 61, display: 'flex', flexDirection: 'column',
+        background: 'rgba(10,13,9,.97)', backdropFilter: 'blur(8px)',
+        border: '1px solid #232b1e',
+        left: portrait ? 0 : 'auto', right: 0, bottom: 0,
+        top: portrait ? '32%' : 0,
+        width: portrait ? '100%' : 330,
+        borderRadius: portrait ? '18px 18px 0 0' : 0,
+        animation: 'sheetFade .22s ease-out both'
+      },
+      eventsBtnStyle: {
+        background: s.logExpanded ? 'rgba(216,178,90,.14)' : 'none',
+        border: '1px solid ' + (s.logExpanded ? '#d8b25a' : '#2a3325'),
+        borderRadius: 999, color: s.logExpanded ? '#ecd39a' : '#7d8b6a',
+        fontSize: 11, minHeight: 44, padding: '0 14px', cursor: 'pointer', fontFamily: 'inherit'
+      },
+      chatterStyle: {
+        display: portrait ? 'flex' : 'none', flexDirection: 'column', flex: 'none',
+        height: 152, padding: '0 12px', cursor: 'pointer', overflow: 'hidden'
+      },
+      recent: s.feed.filter(m => m.kind === 'msg').slice(-3).map(m => ({
+        ...m, system: m.system || false, mine: !!m.mine, color: m.color || '#94a68f'
+      })),
+      areaRef: this.areaRef,
+      seats,
+      bubbles,
+      chipStacks,
+      board: s.board,
+      heroCards: ['Qs', 'Qd'],
+      heroStack: s.seats[0].stack.toLocaleString(),
+      potText: s.pot.toLocaleString(),
+      stageLabel: s.stage,
+      handNo: '#' + s.handNo,
+      lastEvent: s.lastEvent,
+      lastEventTime: s.lastEventTime,
+      runGlyph: s.running ? '❙❙' : '▶',
+      logOpen: s.logOpen,
+      logCount: s.log.length,
+      feed: s.feed.filter(m => m.kind === 'msg' || s.logExpanded).map((m, i, arr) => m.kind === 'msg'
+        ? { ...m, isMsg: true, isEvent: false, system: m.system || false, mine: !!m.mine, color: m.color || '#94a68f' }
+        : {
+            ...m, isMsg: false, isEvent: true,
+            rowStyle: { display: 'flex', gap: 8, padding: '1px 0', opacity: i === arr.length - 1 ? 0.95 : 0.55, animation: 'rowIn .3s ease both' },
+            textStyle: { lineHeight: 1.3, color: kindColor[m.act] || '#8d9a80', fontSize: 11, letterSpacing: '.02em' }
+          }),
+      chatRef: this.chatRef,
+      draft: s.draft,
+      onDraft: this.onDraft,
+      onDraftKey: this.onDraftKey,
+      send: this.send,
+      toggleLogSection: this.toggleLogSection,
+      callLabel: 'Call 900',
+      raiseLabel: 'Raise 2,700',
+      toggleLog: this.toggleLog,
+      toggleRun: this.toggleRun,
+      heroFold: () => this.heroAct('fold'),
+      heroCall: () => this.heroAct('call', 900),
+      heroRaise: () => this.heroAct('raise', 2700),
+      tableRef: this.tableRef,
+      potRef: this.potRef,
+      eventRef: this.eventRef
+    };
+  }
+}
+</script>
+</body>
+</html>

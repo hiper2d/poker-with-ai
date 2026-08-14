@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { applyTheme, THEMES, useTheme } from '@/components/ThemeSwitcher';
 import {
   advanceChat,
   advanceGame,
@@ -55,6 +57,56 @@ function useIsDesktop(): boolean {
     () => true,
   );
 }
+
+/**
+ * Layout mode per the mobile handoff spec: below the desktop breakpoint the shell is
+ * orientation-driven — portrait stacks the action panel under the felt, landscape docks
+ * it as a right-hand rail. SSR snapshot says desktop; the client corrects on mount.
+ */
+type ViewMode = 'desktop' | 'portrait' | 'landscape';
+function useViewMode(): ViewMode {
+  const [mode, setMode] = useState<ViewMode>('desktop');
+  useEffect(() => {
+    const update = () =>
+      setMode(
+        window.innerWidth >= 1024
+          ? 'desktop'
+          : window.innerHeight >= window.innerWidth
+            ? 'portrait'
+            : 'landscape',
+      );
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+  return mode;
+}
+
+/**
+ * Seat rings from the handoff spec (percent of the felt box; anchor c=centered,
+ * l=extends right, r=extends left so side seats stay on-screen). Slot 0 is the human;
+ * the 6-seat rows are the spec's, smaller tables interpolate the same shape.
+ */
+const RING: Record<'portrait' | 'landscape', Record<number, [number, number, 'c' | 'l' | 'r'][]>> = {
+  portrait: {
+    6: [[50, 104, 'c'], [1, 64, 'l'], [15, -8, 'c'], [50, -16, 'c'], [85, -8, 'c'], [99, 64, 'r']],
+    5: [[50, 104, 'c'], [1, 58, 'l'], [25, -12, 'c'], [75, -12, 'c'], [99, 58, 'r']],
+    4: [[50, 104, 'c'], [1, 50, 'l'], [50, -16, 'c'], [99, 50, 'r']],
+    3: [[50, 104, 'c'], [15, -10, 'l'], [85, -10, 'r']],
+    2: [[50, 104, 'c'], [50, -16, 'c']],
+  },
+  landscape: {
+    6: [[50, 104, 'c'], [1, 52, 'l'], [20, -8, 'c'], [50, -16, 'c'], [80, -8, 'c'], [99, 52, 'r']],
+    5: [[50, 104, 'c'], [1, 48, 'l'], [28, -12, 'c'], [72, -12, 'c'], [99, 48, 'r']],
+    4: [[50, 104, 'c'], [1, 46, 'l'], [50, -16, 'c'], [99, 46, 'r']],
+    3: [[50, 104, 'c'], [20, -8, 'l'], [80, -8, 'r']],
+    2: [[50, 104, 'c'], [50, -16, 'c']],
+  },
+};
 
 function isHumanTurn(game: Game): boolean {
   return (
@@ -120,8 +172,25 @@ export default function GameRoom({
   const [eventOpen, setEventOpen] = useState(false);
   // Seat dialog: the clicked bot's name — current model, spend so far, model switch.
   const [botDialog, setBotDialog] = useState<string | null>(null);
-  // Game dialog (click the theme name): total cost + the Pit Boss model.
+  // Game dialog (click the theme name / the mobile state chip): stats, cost, Pit Boss.
   const [gameDialog, setGameDialog] = useState(false);
+  // Mobile shell state: talk sheet/panel, menu sheet, unread-talk badge.
+  const mode = useViewMode();
+  const [talkOpen, setTalkOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const talkSeenRef = useRef(
+    initialMessages.filter((m) => TALK_TYPES.includes(m.messageType)).length,
+  );
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    const count = messages.filter((m) => TALK_TYPES.includes(m.messageType)).length;
+    if (talkOpen || mode === 'desktop') {
+      talkSeenRef.current = count;
+      setUnread(0);
+    } else {
+      setUnread(Math.max(0, count - talkSeenRef.current));
+    }
+  }, [messages, talkOpen, mode]);
   const gameRef = useRef(game);
   const inFlightRef = useRef(false);
   const chatInFlightRef = useRef(false);
@@ -325,6 +394,153 @@ export default function GameRoom({
   const { smallBlind, bigBlind } =
     game.hand ?? GAME_CONFIG.blindLevels[game.blindLevel] ?? GAME_CONFIG.blindLevels[0];
 
+  // Dialogs are shared between the desktop and mobile shells.
+  const dialogs = (
+    <>
+      {eventOpen && lastEvent && typeof lastEvent.msg === 'string' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5"
+          onClick={() => setEventOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg r-md border border-line bg-panel p-5 shadow-theme"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
+              <div className="label-caps">Last event</div>
+              <div className="text-[11px] tracking-[0.1em] text-sage">
+                {fmtTime(lastEvent.timestamp)}
+              </div>
+            </div>
+            <p className="font-serif text-xl leading-relaxed text-cream">{lastEvent.msg}</p>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setEventOpen(false)}
+                className="r-sm border border-line px-4 py-2 text-[13px] text-sage transition hover:border-gold hover:text-cream"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {botDialog && (
+        <BotModelDialog
+          game={game}
+          botName={botDialog}
+          onClose={() => setBotDialog(null)}
+          onChanged={setGame}
+        />
+      )}
+      {gameDialog && (
+        <GameInfoDialog
+          game={game}
+          onClose={() => setGameDialog(false)}
+          onChanged={setGame}
+          onSelectBot={(name) => {
+            setGameDialog(false);
+            setBotDialog(name);
+          }}
+        />
+      )}
+    </>
+  );
+
+  if (mode !== 'desktop') {
+    const portrait = mode === 'portrait';
+    const openTalk = () => {
+      setTalkOpen((o) => !o);
+      setMenuOpen(false);
+      setGameDialog(false);
+    };
+    const table = (
+      <MobileTable
+        game={game}
+        bubbles={bubbles}
+        onDismissBubble={(name) => setBubbles((b) => ({ ...b, [name]: '' }))}
+        onBotClick={(name) => setBotDialog(name)}
+        orientation={mode}
+      />
+    );
+    const chatProps = {
+      game,
+      messages,
+      queue: chatQueue,
+      onSend: onSendChat,
+      onNudge,
+      onPickSpeaker,
+      chatError,
+      onRetry,
+      open: true,
+      overlay: false,
+      onToggle: () => setTalkOpen(false),
+    };
+    return (
+      <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-page">
+        <MobileTopBar
+          game={game}
+          lastEvent={lastEvent}
+          stateOpen={gameDialog}
+          talkOpen={talkOpen}
+          unread={unread}
+          onMenu={() => {
+            setMenuOpen(true);
+            setTalkOpen(false);
+            setGameDialog(false);
+          }}
+          onState={() => {
+            setGameDialog(true);
+            setMenuOpen(false);
+            setTalkOpen(false);
+          }}
+          onTalk={openTalk}
+          onEvent={() => setEventOpen(true)}
+        />
+        {(gameError || error) && (
+          <FailureBanner lane="game" failure={gameError} fallbackMessage={error} onRetry={onRetry} compact />
+        )}
+        {portrait ? (
+          <>
+            {table}
+            {!talkOpen && <TalkPreview game={game} messages={messages} onOpen={openTalk} />}
+            <ActionPanel
+              game={game}
+              myTurn={myTurn}
+              acting={acting}
+              onAction={onHumanAction}
+              onNextHand={onNextHand}
+              rail={false}
+            />
+            {talkOpen && (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setTalkOpen(false)} />
+                <Rail variant="sheet" {...chatProps} />
+              </>
+            )}
+          </>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1">
+            {table}
+            {talkOpen ? (
+              <Rail variant="panel" {...chatProps} />
+            ) : (
+              <ActionPanel
+                game={game}
+                myTurn={myTurn}
+                acting={acting}
+                onAction={onHumanAction}
+                onNextHand={onNextHand}
+                rail
+              />
+            )}
+          </div>
+        )}
+        {menuOpen && <MenuSheet game={game} onClose={() => setMenuOpen(false)} />}
+        {dialogs}
+      </div>
+    );
+  }
+
   return (
     // Pinned to the viewport edges instead of height-calc'd: every viewport unit fails
     // some mobile browser (dvh re-creates page scroll when the URL bar collapses, svh
@@ -446,34 +662,6 @@ export default function GameRoom({
             </button>
           </div>
         )}
-        {eventOpen && lastEvent && typeof lastEvent.msg === 'string' && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5"
-            onClick={() => setEventOpen(false)}
-          >
-            <div
-              className="w-full max-w-lg r-md border border-line bg-panel p-5 shadow-theme"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                <div className="label-caps">Last event</div>
-                <div className="text-[11px] tracking-[0.1em] text-sage">
-                  {fmtTime(lastEvent.timestamp)}
-                </div>
-              </div>
-              <p className="font-serif text-xl leading-relaxed text-cream">{lastEvent.msg}</p>
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setEventOpen(false)}
-                  className="r-sm border border-line px-4 py-2 text-[13px] text-sage transition hover:border-gold hover:text-cream"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {(gameError || error) && (
           <FailureBanner lane="game" failure={gameError} fallbackMessage={error} onRetry={onRetry} />
         )}
@@ -491,17 +679,7 @@ export default function GameRoom({
           </div>
         </div>
 
-        {botDialog && (
-          <BotModelDialog
-            game={game}
-            botName={botDialog}
-            onClose={() => setBotDialog(null)}
-            onChanged={setGame}
-          />
-        )}
-        {gameDialog && (
-          <GameInfoDialog game={game} onClose={() => setGameDialog(false)} onChanged={setGame} />
-        )}
+        {dialogs}
 
         <HeroBar game={game} myTurn={myTurn} acting={acting} onAction={onHumanAction} onNextHand={onNextHand} />
       </div>
@@ -814,13 +992,32 @@ function GameInfoDialog({
   game,
   onClose,
   onChanged,
+  onSelectBot,
 }: {
   game: Game;
   onClose: () => void;
   onChanged: (game: Game) => void;
+  /** Roster row tap — closes this dialog and opens that character's seat dialog. */
+  onSelectBot?: (name: string) => void;
 }) {
   const gmModel = SUPPORTED_MODELS.find((m) => m.id === game.gameMasterAiType);
   const botsCost = game.bots.reduce((sum, b) => sum + (b.tokenUsage?.costUsd ?? 0), 0);
+  const hand = game.hand;
+  const pot = hand?.players.reduce((sum, p) => sum + p.totalCommitted, 0) ?? 0;
+  const { smallBlind, bigBlind } =
+    hand ?? GAME_CONFIG.blindLevels[game.blindLevel] ?? GAME_CONFIG.blindLevels[0];
+  const legal = hand && !hand.complete ? humanLegal(hand, game.humanPlayerName) : null;
+  const rosterSeats = [...game.seats].sort((a, b) => a.seatIndex - b.seatIndex);
+  const lastActionOf = (name: string) => {
+    const log = hand?.actionLog ?? [];
+    for (let i = log.length - 1; i >= 0; i--) {
+      if (log[i].player === name && log[i].street === hand?.street) {
+        const a = log[i];
+        return a.type + (a.amount ? ` ${a.amount.toLocaleString()}` : '');
+      }
+    }
+    return '';
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" onClick={onClose}>
       <div
@@ -841,6 +1038,62 @@ function GameInfoDialog({
           >
             Close
           </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2.5">
+          {(
+            [
+              ['Pot', pot.toLocaleString()],
+              ['Blinds', `${smallBlind.toLocaleString()} · ${bigBlind.toLocaleString()}`],
+              ['To call', legal && legal.callAmount > 0 ? legal.callAmount.toLocaleString() : '—'],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label}>
+              <div className="text-[9px] uppercase tracking-[0.18em] text-sage">{label}</div>
+              <div className="font-serif text-xl leading-tight tabular-nums text-parchment">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-col gap-1 border-t border-line pt-2.5">
+          {rosterSeats.map((seat) => {
+            const bot = game.bots.find((b) => b.name === seat.name);
+            const model = bot && SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
+            const player = hand?.players.find((p) => p.name === seat.name);
+            const behind = player ? player.startingStack - player.totalCommitted : seat.stack;
+            const folded = player?.folded || seat.status === 'eliminated';
+            const acting = !hand?.complete && hand?.toAct === seat.name;
+            const row = (
+              <>
+                <span
+                  className="h-[7px] w-[7px] flex-none rounded-full"
+                  style={{
+                    background: acting ? 'var(--t-acc)' : folded ? 'var(--t-line)' : avatarColor(game, seat.name),
+                  }}
+                />
+                <span className="flex-none font-serif text-base text-cream">{seat.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[10px] text-sage">
+                  {seat.isHuman ? 'you' : (model?.displayName ?? bot?.aiType)}
+                </span>
+                <span
+                  className={`flex-none text-[9px] uppercase tracking-[0.14em] ${folded ? 'text-loss' : 'text-sage'}`}
+                >
+                  {folded ? 'folded' : lastActionOf(seat.name)}
+                </span>
+                <span className="flex-none text-[13px] tabular-nums text-gold">{behind.toLocaleString()}</span>
+              </>
+            );
+            const rowClass = `flex min-h-8 w-full items-center gap-2 ${folded ? 'opacity-45' : ''}`;
+            return seat.isHuman || !onSelectBot ? (
+              <div key={seat.name} className={rowClass}>
+                {row}
+              </div>
+            ) : (
+              <button key={seat.name} type="button" onClick={() => onSelectBot(seat.name)} className={`${rowClass} text-left`}>
+                {row}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-4 flex items-baseline justify-between gap-3 rounded-xl border border-line px-3.5 py-2.5">
@@ -931,6 +1184,548 @@ function SeatBubble({
           ×
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The phone table (handoff spec "Table geometry"): the felt box is measured from the
+ * area — never viewport-unit-derived — and the seat ring is placed in percent of that
+ * box with edge-anchored side seats and a uniform scale factor. Bubbles reuse the
+ * clamped SeatBubble layer.
+ */
+function MobileTable({
+  game,
+  bubbles,
+  onDismissBubble,
+  onBotClick,
+  orientation,
+}: {
+  game: Game;
+  bubbles: Record<string, string>;
+  onDismissBubble: (name: string) => void;
+  onBotClick: (name: string) => void;
+  orientation: 'portrait' | 'landscape';
+}) {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ tw: 320, th: 198, mt: 10 });
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    // FELT_R=1.62, OVER_TOP=.20, OVER_BOT=.08, PILL_PAD=30 (see the handoff README)
+    const measure = () => {
+      const w = el.clientWidth - 16;
+      const h = el.clientHeight;
+      const hFit = Math.max(110, (h - 60) / 1.28);
+      const tw = Math.round(Math.max(200, Math.min(w, hFit * 1.62)));
+      const th = Math.round(tw / 1.62);
+      setBox({ tw, th, mt: Math.round(th * 0.06) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const seats = [...game.seats].sort((a, b) => a.seatIndex - b.seatIndex);
+  const n = seats.length;
+  const humanIdx = Math.max(0, seats.findIndex((s) => s.isHuman));
+  const ring = RING[orientation][Math.min(6, Math.max(2, n))] ?? RING[orientation][6];
+  const slotFor = (i: number) => ring[(i - humanIdx + n) % n] ?? ring[0];
+  const k = Math.min(0.92, Math.max(0.52, box.tw / 620));
+  const pot = game.hand?.players.reduce((sum, p) => sum + p.totalCommitted, 0) ?? 0;
+  const potPx = Math.round(Math.min(44, Math.max(26, box.tw / 8)));
+  const boardScale = Math.min(1, Math.max(0.6, (box.tw - 40) / 320));
+
+  const handPlayers = game.hand && !game.hand.complete ? game.hand.players : null;
+  const headsUp = handPlayers?.length === 2;
+  const sbName = handPlayers ? (headsUp ? handPlayers[1] : handPlayers[0]).name : null;
+  const bbName = handPlayers ? (headsUp ? handPlayers[0] : handPlayers[1]).name : null;
+  const lastActionOf = (name: string) => {
+    const log = game.hand?.actionLog ?? [];
+    for (let i = log.length - 1; i >= 0; i--) {
+      if (log[i].player === name && log[i].street === game.hand?.street) {
+        const a = log[i];
+        return a.type + (a.amount ? ` ${a.amount.toLocaleString()}` : '');
+      }
+    }
+    return '';
+  };
+  const lastRecord = game.handHistory[game.handHistory.length - 1];
+  const showdownCards =
+    game.status === 'HAND_RESULTS' && lastRecord?.handNumber === game.handNumber
+      ? new Map((lastRecord.showdown ?? []).map((s) => [s.name, s.cards]))
+      : null;
+  // bet chips sit between seat and pot, closer to the seat than on desktop
+  const stackPos = (i: number) => {
+    const [x, y] = slotFor(i);
+    return { left: x + (50 - x) * 0.6, top: y + (50 - y) * 0.5 };
+  };
+
+  return (
+    <div ref={areaRef} className="relative min-h-0 min-w-0 flex-1">
+      <div className="flex h-full w-full items-center justify-center">
+        <div className="relative" style={{ width: box.tw, height: box.th, marginTop: box.mt }}>
+          <TableFelt
+            seats={
+              <>
+                {game.hand &&
+                  !game.hand.complete &&
+                  game.hand.players.map((p) => {
+                    const i = seats.findIndex((s) => s.name === p.name);
+                    if (i < 0 || p.folded || p.streetCommitted <= 0) return null;
+                    const pos = stackPos(i);
+                    return (
+                      <div
+                        key={`${p.name}-${p.streetCommitted}`}
+                        // z below the board cards: on a phone felt the interpolated pill
+                        // spots can brush the board row — sliding under reads better
+                        className="chip-pop absolute z-[5] flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded-full border border-line bg-panel py-0.5 pl-1 pr-1.5"
+                        style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+                      >
+                        <span className="flex items-center">
+                          {[0, 1].map((c) => (
+                            <span
+                              key={c}
+                              className={`h-2.5 w-2.5 rounded-full border border-black/50 ${c > 0 ? '-ml-1' : ''}`}
+                              style={{ background: 'var(--t-chip)' }}
+                            />
+                          ))}
+                        </span>
+                        <span className="text-[10px] tabular-nums text-cream">
+                          {p.streetCommitted.toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })}
+                {showdownCards &&
+                  seats.map((seat, i) => {
+                    const cards = showdownCards.get(seat.name);
+                    if (!cards?.length) return null;
+                    const pos = stackPos(i);
+                    return (
+                      <div
+                        key={`show-${seat.name}`}
+                        className="chip-pop absolute z-[13] flex -translate-x-1/2 -translate-y-1/2 gap-1"
+                        style={{ left: `${pos.left}%`, top: `${pos.top}%`, transform: `translate(-50%,-50%) scale(${k})` }}
+                      >
+                        {cards.map((card) => (
+                          <PlayingCard key={card} card={card} />
+                        ))}
+                      </div>
+                    );
+                  })}
+                {seats.map((seat, i) => {
+                  const [x, y, a] = slotFor(i);
+                  const player = game.hand?.players.find((p) => p.name === seat.name);
+                  const behind = player ? player.startingStack - player.totalCommitted : seat.stack;
+                  const acting = !game.hand?.complete && game.hand?.toAct === seat.name;
+                  const tx = a === 'c' ? '-50%' : a === 'l' ? '0%' : '-100%';
+                  const origin = a === 'c' ? 'center' : a === 'l' ? 'left center' : 'right center';
+                  const pill = (
+                    <SeatPill
+                      name={seat.name}
+                      stack={behind}
+                      avatarColor={avatarColor(game, seat.name)}
+                      isHuman={seat.isHuman}
+                      lastAction={lastActionOf(seat.name)}
+                      folded={player?.folded}
+                      active={acting}
+                      dimmed={seat.status === 'eliminated' || player?.folded}
+                      dealer={game.buttonSeat === seat.seatIndex}
+                      blind={seat.name === sbName ? 'SB' : seat.name === bbName ? 'BB' : undefined}
+                    />
+                  );
+                  return (
+                    <div
+                      key={seat.seatIndex}
+                      className="absolute z-20"
+                      style={{
+                        left: `${x}%`,
+                        top: `${y}%`,
+                        transform: `translate(${tx}, -50%) scale(${k})`,
+                        transformOrigin: origin,
+                      }}
+                    >
+                      {acting && (
+                        <div className="absolute -top-[13px] left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full bg-gold px-2 py-0.5 text-[8px] uppercase tracking-[0.22em] text-[color:var(--t-acc-ink)]">
+                          Acting
+                        </div>
+                      )}
+                      {seat.isHuman ? (
+                        pill
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onBotClick(seat.name)}
+                          className="block text-left"
+                        >
+                          {pill}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {seats.map((seat, i) => {
+                  const bubble = bubbles[seat.name];
+                  if (!bubble) return null;
+                  const [x, y] = slotFor(i);
+                  return (
+                    <SeatBubble
+                      key={`${seat.seatIndex}:${bubble}`}
+                      author={seat.name}
+                      authorColor={avatarColor(game, seat.name)}
+                      left={x}
+                      top={y}
+                      text={bubble}
+                      onDismiss={() => onDismissBubble(seat.name)}
+                    />
+                  );
+                })}
+              </>
+            }
+          >
+            <div className="text-center">
+              <div className="text-[9px] uppercase tracking-[0.24em] text-sage">Pot</div>
+              <div key={pot} className="pot-pulse font-serif leading-none tabular-nums text-parchment" style={{ fontSize: potPx }}>
+                {pot.toLocaleString()}
+              </div>
+            </div>
+            <div
+              className="relative z-10 flex min-h-0 items-center gap-1.5"
+              style={{ transform: `scale(${boardScale})`, transformOrigin: 'center top' }}
+            >
+              {(game.hand?.board ?? []).map((card) => (
+                <PlayingCard key={card} card={card} />
+              ))}
+              {!game.hand && (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-sage-dim">
+                  {game.status === 'GAME_OVER' ? 'Game over' : 'Shuffling up…'}
+                </span>
+              )}
+            </div>
+          </TableFelt>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One-row in-game chrome (mobile): menu, state chip, inline last event, talk toggle. */
+function MobileTopBar({
+  game,
+  lastEvent,
+  stateOpen,
+  talkOpen,
+  unread,
+  onMenu,
+  onState,
+  onTalk,
+  onEvent,
+}: {
+  game: Game;
+  lastEvent: GameMessage | undefined;
+  stateOpen: boolean;
+  talkOpen: boolean;
+  unread: number;
+  onMenu: () => void;
+  onState: () => void;
+  onTalk: () => void;
+  onEvent: () => void;
+}) {
+  const street =
+    game.status === 'BETTING' && game.hand && !game.hand.complete
+      ? game.hand.street
+      : game.status === 'COMPACTION' && game.gameQueue[0]
+        ? 'memorizing…'
+        : game.status.replaceAll('_', ' ').toLowerCase();
+  return (
+    <div className="flex flex-none items-center gap-2 border-b border-line px-3 pb-2 pt-[max(8px,env(safe-area-inset-top))]">
+      <button
+        onClick={onMenu}
+        aria-label="Menu"
+        className="flex h-11 w-11 flex-none items-center justify-center rounded-[13px] border border-line bg-[rgba(216,178,90,0.08)]"
+      >
+        <span className="flex flex-col gap-[3px]">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="h-[1.5px] w-3.5 rounded bg-gold-pale" />
+          ))}
+        </span>
+      </button>
+      <button
+        onClick={onState}
+        className={`flex h-11 flex-none items-center gap-1.5 rounded-full border px-3.5 ${
+          stateOpen ? 'border-gold bg-[rgba(216,178,90,0.14)]' : 'border-line'
+        }`}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_8px_2px_rgba(216,178,90,0.45)]" />
+        <span className="text-[10px] uppercase tracking-[0.14em] text-gold">{street}</span>
+        <span className="text-[10px] uppercase tracking-[0.1em] text-sage">#{game.handNumber}</span>
+      </button>
+      {lastEvent && typeof lastEvent.msg === 'string' ? (
+        <button
+          key={lastEvent.id}
+          onClick={onEvent}
+          className="row-in min-w-0 flex-1 truncate text-left font-serif text-[17px] leading-tight text-cream"
+        >
+          {lastEvent.msg}
+        </button>
+      ) : (
+        <div className="flex-1" />
+      )}
+      <button
+        onClick={onTalk}
+        aria-label="Table talk"
+        title="Table talk"
+        className={`relative flex h-11 w-11 flex-none items-center justify-center rounded-full border ${
+          talkOpen ? 'border-gold bg-[rgba(216,178,90,0.14)] text-gold-pale' : 'border-line text-sage'
+        }`}
+      >
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 8.5a1.5 1.5 0 0 1-1.5 1.5H6l-3 2.5V10h-.5A1.5 1.5 0 0 1 1 8.5v-4A1.5 1.5 0 0 1 2.5 3h8A1.5 1.5 0 0 1 12 4.5z" />
+        </svg>
+        {unread > 0 && !talkOpen && (
+          <span className="absolute right-2 top-2 h-[7px] w-[7px] rounded-full bg-gold shadow-[0_0_8px_2px_rgba(216,178,90,0.5)]" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+/** In-game menu sheet: the nav links, theme picker, and tier badge live here on phones. */
+function MenuSheet({ game, onClose }: { game: Game; onClose: () => void }) {
+  const theme = useTheme();
+  const links: [string, string][] = [
+    ['Tables', '/games'],
+    ['Host a table', '/games/new'],
+    ['Models', '/models'],
+    ['Rules', '/rules'],
+    ['Profile', '/profile'],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60" onClick={onClose}>
+      <div
+        className="absolute left-3 top-[max(10px,env(safe-area-inset-top))] flex max-h-[calc(100dvh-40px)] w-[min(300px,calc(100vw-24px))] flex-col overflow-y-auto rounded-[18px] border border-line bg-panel p-4 shadow-theme"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <span className="min-w-0 truncate font-serif text-xl text-cream">{game.theme}</span>
+          <span className="flex-none rounded-full bg-gold px-2 py-0.5 text-[9px] uppercase tracking-[0.16em] text-[color:var(--t-acc-ink)]">
+            {game.createdWithTier}
+          </span>
+        </div>
+        {links.map(([label, href], i) => (
+          <Link
+            key={href}
+            href={href}
+            className={`flex min-h-12 items-center px-1 font-serif text-[19px] text-cream ${i > 0 ? 'border-t border-line' : ''}`}
+          >
+            {label}
+          </Link>
+        ))}
+        <Link
+          href="/games"
+          className="flex min-h-12 items-center border-t border-line px-1 font-serif text-[19px] text-loss"
+        >
+          Leave table
+        </Link>
+        <div className="border-t border-line pt-3">
+          <CapsLabel className="mb-2">Theme</CapsLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {THEMES.map((t) => (
+              <Pill key={t} selected={theme === t} onClick={() => applyTheme(t)} className="capitalize">
+                {t}
+              </Pill>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="mt-4 min-h-12 w-full rounded-full border border-line text-[11px] uppercase tracking-[0.14em] text-sage"
+        >
+          Back to table
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Portrait-only strip under the felt: the last few lines of talk, tap to open the sheet. */
+function TalkPreview({
+  game,
+  messages,
+  onOpen,
+}: {
+  game: Game;
+  messages: GameMessage[];
+  onOpen: () => void;
+}) {
+  const talk = messages
+    .filter((m) => TALK_TYPES.includes(m.messageType) || m.messageType === 'HUMAN_PLAYER_MESSAGE')
+    .slice(-3);
+  return (
+    <button onClick={onOpen} className="flex h-[152px] flex-none flex-col overflow-hidden px-3 text-left">
+      <div className="flex flex-none items-center justify-between border-b border-line pb-1">
+        <span className="text-[9px] uppercase tracking-[0.18em] text-sage">Table talk</span>
+        <span className="text-[9px] uppercase tracking-[0.1em] text-sage-dim">Tap to open</span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden pt-1.5">
+        {talk.map((m) => (
+          <ChatBubble
+            key={m.id}
+            author={m.authorName}
+            authorColor={avatarColor(game, m.authorName)}
+            mine={m.authorName === game.humanPlayerName}
+          >
+            {typeof m.msg === 'string' ? m.msg : ''}
+          </ChatBubble>
+        ))}
+        {talk.length === 0 && <span className="pb-2 text-[12px] text-sage-dim">Quiet table, for now.</span>}
+      </div>
+    </button>
+  );
+}
+
+/**
+ * The hand + actions unit (handoff spec): a bottom panel in portrait, a 168px right
+ * rail in landscape. Same legality/sizer logic as the desktop HeroBar.
+ */
+function ActionPanel({
+  game,
+  myTurn,
+  acting,
+  onAction,
+  onNextHand,
+  rail,
+}: {
+  game: Game;
+  myTurn: boolean;
+  acting: boolean;
+  onAction: (type: ActionType, amount?: number) => void;
+  onNextHand: () => void;
+  rail: boolean;
+}) {
+  const hand = game.hand;
+  const me = hand?.players.find((p) => p.name === game.humanPlayerName);
+  const legal = hand && !hand.complete ? humanLegal(hand, game.humanPlayerName) : null;
+  const [raiseTo, setRaiseTo] = useState(0);
+  const [sizerOpen, setSizerOpen] = useState(false);
+  useEffect(() => {
+    if (legal) setRaiseTo((r) => Math.min(Math.max(r, legal.minRaiseTo), legal.maxRaiseTo));
+    if (!myTurn) setSizerOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hand?.street, hand?.currentBet, myTurn]);
+
+  const shell = rail
+    ? 'flex w-[168px] flex-none flex-col justify-center gap-3 overflow-y-auto border-l border-line py-2 pl-3.5 pr-3'
+    : 'flex flex-none flex-col gap-2.5 border-t border-line px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2';
+
+  if (game.status === 'GAME_OVER') {
+    const champion = game.seats.find((s) => s.status === 'active');
+    return (
+      <div className={`${shell} text-center`}>
+        <CapsLabel>Game over</CapsLabel>
+        <div className="font-serif text-xl text-gold-pale">
+          {champion ? `${champion.name} takes it all` : 'The table is empty'}
+        </div>
+      </div>
+    );
+  }
+  if (!hand || !me) return <div className={rail ? 'w-[168px] flex-none border-l border-line' : 'h-3 flex-none'} />;
+  const behind = me.startingStack - me.totalCommitted;
+  const presets = legal
+    ? [
+        ['Min', legal.minRaiseTo],
+        ['½ pot', hand.currentBet + Math.round(legal.pot / 2)],
+        ['Pot', hand.currentBet + legal.pot],
+        ['All in', legal.maxRaiseTo],
+      ].map(([label, v]) => [label, Math.min(Math.max(v as number, legal.minRaiseTo), legal.maxRaiseTo)] as const)
+    : [];
+
+  return (
+    <div className={shell}>
+      <div className={rail ? 'flex flex-col items-start gap-1.5' : 'flex items-center gap-2.5'}>
+        <div>
+          <CapsLabel className="text-[9px]">Your hand</CapsLabel>
+          <div className="mt-0.5 flex origin-top-left scale-[0.92] gap-1.5">
+            {(me.holeCards ?? []).map((card) => (
+              <PlayingCard key={card} card={card} />
+            ))}
+          </div>
+        </div>
+        {!rail && <div className="flex-1" />}
+        <div className={rail ? '' : 'text-right'}>
+          <CapsLabel className="text-[9px]">Stack</CapsLabel>
+          <div className="font-serif text-[17px] leading-tight tabular-nums text-parchment">
+            {behind.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {myTurn && legal && legal.canRaise && sizerOpen && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-serif text-lg tabular-nums text-parchment">{raiseTo.toLocaleString()}</span>
+            <div className="flex flex-wrap gap-1">
+              {presets.map(([label, v]) => (
+                <Pill key={label} className="!min-h-8 !px-2.5 text-[11px]" onClick={() => setRaiseTo(v)}>
+                  {label}
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <input
+            type="range"
+            min={legal.minRaiseTo}
+            max={legal.maxRaiseTo}
+            step={hand.bigBlind / 2}
+            value={raiseTo}
+            onChange={(e) => setRaiseTo(Number(e.target.value))}
+            className="accent-gold"
+          />
+        </div>
+      )}
+
+      {game.status === 'HAND_RESULTS' ? (
+        <Button variant="gold" size="lg" onClick={onNextHand} disabled={acting} className="w-full uppercase tracking-[0.08em]">
+          {acting ? 'Dealing…' : 'Deal next hand'}
+        </Button>
+      ) : legal && !me.folded ? (
+        <div className={rail ? 'flex flex-col gap-2' : 'flex gap-2'}>
+          <Button variant="dark" size="lg" disabled={acting || !myTurn} onClick={() => onAction('fold')} className="w-full uppercase tracking-[0.08em]">
+            Fold
+          </Button>
+          <Button
+            variant="moss"
+            size="lg"
+            disabled={acting || !myTurn}
+            onClick={() => onAction(legal.callAmount ? 'call' : 'check')}
+            className="w-full uppercase tracking-[0.08em]"
+          >
+            {legal.callAmount ? `Call ${legal.callAmount.toLocaleString()}` : 'Check'}
+          </Button>
+          {legal.canRaise && (
+            <Button
+              variant="gold"
+              size="lg"
+              disabled={acting || !myTurn}
+              onClick={() => {
+                if (!sizerOpen) setSizerOpen(true);
+                else onAction(hand.currentBet === 0 ? 'bet' : 'raise', raiseTo);
+              }}
+              className="w-full uppercase tracking-[0.08em]"
+            >
+              {sizerOpen
+                ? `${hand.currentBet === 0 ? 'Bet' : 'Raise'} ${raiseTo.toLocaleString()}`
+                : `${hand.currentBet === 0 ? 'Bet' : 'Raise'}…`}
+            </Button>
+          )}
+        </div>
+      ) : legal && me.folded ? (
+        <span className="text-[10px] uppercase tracking-[0.14em] text-sage-dim">
+          You folded — watching the hand
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1361,12 +2156,15 @@ function Rail({
   onPickSpeaker,
   chatError,
   onRetry,
+  variant = 'desktop',
 }: {
   game: Game;
   messages: GameMessage[];
   open: boolean;
   /** Narrow screens: float over the table instead of squeezing it, and vanish when closed. */
   overlay: boolean;
+  /** desktop = collapsible side rail; sheet = portrait bottom sheet; panel = landscape right panel. */
+  variant?: 'desktop' | 'sheet' | 'panel';
   /** Speakers still queued, in order — [0] is talking now. */
   queue: string[];
   onToggle: () => void;
@@ -1444,15 +2242,22 @@ function Rail({
     }
   };
 
+  // Sheets are pinned by insets, never sized by an entrance transform (handoff note).
+  const shellClass =
+    variant === 'sheet'
+      ? 'fixed inset-x-0 bottom-0 top-[32%] z-40 flex flex-col overflow-hidden rounded-t-[18px] border-t border-line bg-page shadow-theme'
+      : variant === 'panel'
+        ? 'flex h-full w-[330px] max-w-[88vw] flex-none flex-col overflow-hidden border-l border-line bg-page'
+        : `flex-none overflow-hidden border-l border-line bg-page transition-[width] duration-300 ${
+            overlay ? 'absolute inset-y-0 right-0 z-40 shadow-theme' : ''
+          }`;
   return (
     <aside
-      className={`flex-none overflow-hidden border-l border-line bg-page transition-[width] duration-300 ${
-        overlay ? 'absolute inset-y-0 right-0 z-40 shadow-theme' : ''
-      }`}
-      style={{ width: open ? 'min(320px, 88vw)' : overlay ? 0 : 52 }}
+      className={shellClass}
+      style={variant === 'desktop' ? { width: open ? 'min(320px, 88vw)' : overlay ? 0 : 52 } : undefined}
     >
       {open ? (
-        <div className="flex h-full w-[min(320px,88vw)] flex-col">
+        <div className={`flex h-full flex-col ${variant === 'desktop' ? 'w-[min(320px,88vw)]' : 'w-full'}`}>
           <div className="flex flex-none items-center justify-between px-4.5 pb-2.5 pt-4">
             <CapsLabel>Table talk</CapsLabel>
             <div className="flex items-center gap-1.5">
@@ -1615,7 +2420,7 @@ function Rail({
               </>
             )}
           </div>
-          <div className="flex flex-none items-center gap-2 px-4 pb-2.5 pt-2">
+          <div className="flex flex-none items-center gap-2 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

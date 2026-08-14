@@ -86,12 +86,15 @@ What follows is ordered roughly by value.
 
 ## 4. UX polish
 
-- [x] **Mobile game room** (portrait — done): fixed-position screen (no page scroll),
-      clamped seats, portrait felt, one-line header, draggable clamped speech bubbles,
-      compaction progress in the top bar, events shown in chat by default. Dev preview
-      + measurement harness: `/dev/table` (dev-only) + `scripts/measure-layout.js`.
-- [ ] **Landscape mobile** is currently unusable — needs its own layout pass
-      (short-viewport arrangement, or a "rotate your phone" interstitial as a stopgap).
+- [x] **Mobile game room** (done — rebuilt to the "Mobile screen optimization" handoff,
+      spec in `design-handoff/design_handoff_mobile_game_table/README.md`): one-row
+      in-game chrome (menu sheet replaces the nav, state chip opens the game dialog,
+      last event inline), measured felt geometry with anchored seat rings, talk as a
+      portrait bottom sheet / landscape right panel (never shown with the action panel
+      when space is tight), action panel bottom (portrait) or right rail (landscape).
+      Desktop (≥1024px) unchanged. Verified 390x844 / 844x390 / 924x540: zero
+      out-of-viewport elements, zero scroll. Harness: `/dev/table` + scratch scripts.
+- [x] **Landscape mobile** — covered by the same shell (side action rail layout).
 - [ ] **More storytelling**: richer GM narrative beats during play (scene-setting
       between hands, stakes rising with the blinds — the GM model is already wired).
 - [ ] **Eliminated players go silent**: busted characters drop out of table talk

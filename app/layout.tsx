@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import InGameNavGate from "@/components/InGameNavGate";
 import NavBar from "@/components/NavBar";
 import "./globals.css";
 
@@ -44,7 +45,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>
       <body className="bg-page flex min-h-full flex-col text-cream">
-        <NavBar />
+        <InGameNavGate>
+          <NavBar />
+        </InGameNavGate>
         {children}
       </body>
     </html>
