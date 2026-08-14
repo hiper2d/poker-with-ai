@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import {
   advanceChat,
   advanceGame,
+  changeBotModel,
   continueChat,
   humanAction,
   nextHand,
@@ -13,7 +14,7 @@ import {
 } from '@/app/actions/play-actions';
 import { getModelAccess } from '@/app/actions/user-actions';
 import ModelSelect from '@/components/ModelSelect';
-import { Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
+import { Avatar, Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
 import { SUPPORTED_MODELS } from '@/config/models';
 import type { ActionType, HandState } from '@/lib/engine/types';
@@ -116,6 +117,8 @@ export default function GameRoom({
   const [chatQueue, setChatQueue] = useState<string[]>(initialGame.chatQueue.map((e) => e.actor));
   // Full-text popup for a truncated "last event" banner.
   const [eventOpen, setEventOpen] = useState(false);
+  // Seat dialog: the clicked bot's name — current model, spend so far, model switch.
+  const [botDialog, setBotDialog] = useState<string | null>(null);
   const gameRef = useRef(game);
   const inFlightRef = useRef(false);
   const chatInFlightRef = useRef(false);
@@ -468,9 +471,19 @@ export default function GameRoom({
               game={game}
               bubbles={bubbles}
               onDismissBubble={(name) => setBubbles((b) => ({ ...b, [name]: '' }))}
+              onBotClick={(name) => setBotDialog(name)}
             />
           </div>
         </div>
+
+        {botDialog && (
+          <BotModelDialog
+            game={game}
+            botName={botDialog}
+            onClose={() => setBotDialog(null)}
+            onChanged={setGame}
+          />
+        )}
 
         <HeroBar game={game} myTurn={myTurn} acting={acting} onAction={onHumanAction} onNextHand={onNextHand} />
       </div>
@@ -638,6 +651,116 @@ function FlyingChip({ flight }: { flight: ChipFlight }) {
   );
 }
 
+function fmtUsd(cost: number): string {
+  return `$${cost.toFixed(cost > 0 && cost < 0.1 ? 4 : 2)}`;
+}
+
+/**
+ * The seat dialog: who this character runs on, what they've spent, and a switch to
+ * another model. The switch is permanent (unlike the failure banner's one-shot retry)
+ * and re-validates the whole table against the game's tier server-side.
+ */
+function BotModelDialog({
+  game,
+  botName,
+  onClose,
+  onChanged,
+}: {
+  game: Game;
+  botName: string;
+  onClose: () => void;
+  onChanged: (game: Game) => void;
+}) {
+  const [options, setOptions] = useState<ModelPickerOption[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getModelAccess()
+      .then((access) => setOptions(getModelPickerOptions(access.tier)))
+      .catch(() => setError('Could not load the model list.'));
+  }, []);
+
+  const bot = game.bots.find((b) => b.name === botName);
+  if (!bot) return null;
+  const model = SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
+  const usage = bot.tokenUsage;
+
+  const pick = async (modelId: string) => {
+    if (busy || modelId === bot.aiType) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onChanged(await changeBotModel(game.id, botName, modelId));
+      onClose();
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" onClick={onClose}>
+      <div
+        className="w-full max-w-lg r-md border border-line bg-panel p-5 shadow-theme"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <Avatar name={bot.name} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="font-serif text-xl leading-tight text-cream">{bot.name}</div>
+            <div className="text-[12px] text-sage">{model?.displayName ?? bot.aiType}</div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="r-sm flex-none border border-line px-3 py-1.5 text-[13px] text-sage transition hover:border-gold hover:text-cream"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-baseline justify-between gap-3 rounded-xl border border-line px-3.5 py-2.5">
+          <CapsLabel>Spent this game</CapsLabel>
+          {usage ? (
+            <div className="text-right">
+              <div className="font-serif text-lg tabular-nums text-gold-pale">{fmtUsd(usage.costUsd)}</div>
+              <div className="text-[11px] tabular-nums text-sage">
+                {usage.inputTokens.toLocaleString()} in · {usage.outputTokens.toLocaleString()} out
+              </div>
+            </div>
+          ) : (
+            <span className="text-[12px] text-sage">nothing yet</span>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <CapsLabel className="mb-2">Change model</CapsLabel>
+          {error && <div className="mb-2 text-[12px] text-loss">{error}</div>}
+          {options ? (
+            <div className={busy ? 'pointer-events-none opacity-50' : ''}>
+              <ModelSelect
+                options={options}
+                selected={[bot.aiType]}
+                onChange={(ids) => ids[0] && void pick(ids[0])}
+                mode="single"
+                placeholder="Pick a new model…"
+              />
+            </div>
+          ) : (
+            !error && <div className="text-[12px] text-sage">Loading models…</div>
+          )}
+          <p className="mt-2 text-[11px] leading-snug text-sage opacity-70">
+            Applies from {bot.name}&rsquo;s next turn — their memory and style stay; only the
+            engine behind them changes.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One seat's table-talk popup. Lives on the felt itself (not inside the seat wrapper):
  * its left edge is clamped to the container, so no pill width or transform can push it
@@ -709,10 +832,12 @@ function PokerTable({
   game,
   bubbles,
   onDismissBubble,
+  onBotClick,
 }: {
   game: Game;
   bubbles: Record<string, string>;
   onDismissBubble: (name: string) => void;
+  onBotClick: (name: string) => void;
 }) {
   const seats = [...game.seats].sort((a, b) => a.seatIndex - b.seatIndex);
   const n = seats.length;
@@ -876,19 +1001,36 @@ function PokerTable({
                     </div>
                   </>
                 )}
-                <SeatPill
-                  name={seat.name}
-                  stack={behind}
-                  avatarColor={avatarColor(game, seat.name)}
-                  isHuman={seat.isHuman}
-                  tag={model?.displayName}
-                  lastAction={lastActionOf(seat.name)}
-                  folded={player?.folded}
-                  active={acting}
-                  dimmed={seat.status === 'eliminated' || player?.folded}
-                  dealer={game.buttonSeat === seat.seatIndex}
-                  blind={seat.name === sbName ? 'SB' : seat.name === bbName ? 'BB' : undefined}
-                />
+                {(() => {
+                  const pill = (
+                    <SeatPill
+                      name={seat.name}
+                      stack={behind}
+                      avatarColor={avatarColor(game, seat.name)}
+                      isHuman={seat.isHuman}
+                      tag={model?.displayName}
+                      lastAction={lastActionOf(seat.name)}
+                      folded={player?.folded}
+                      active={acting}
+                      dimmed={seat.status === 'eliminated' || player?.folded}
+                      dealer={game.buttonSeat === seat.seatIndex}
+                      blind={seat.name === sbName ? 'SB' : seat.name === bbName ? 'BB' : undefined}
+                    />
+                  );
+                  // bots open the seat dialog (model + spend); the human seat is inert
+                  return seat.isHuman ? (
+                    pill
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onBotClick(seat.name)}
+                      title={`${seat.name} — model & cost`}
+                      className="block text-left"
+                    >
+                      {pill}
+                    </button>
+                  );
+                })()}
               </div>
             );
           })}

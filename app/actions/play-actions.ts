@@ -589,6 +589,36 @@ export const retryLane = gameAction(
   },
 );
 
+/**
+ * Permanently switch a bot to another model (the seat dialog). Unlike retryLane's
+ * one-shot substitution, this rewrites `bot.aiType` — every later call (decisions,
+ * chat, compaction) uses the new model. The whole table re-validates against the
+ * game's tier exactly as creation would, so free-tier per-game model limits hold.
+ */
+export const changeBotModel = gameAction(
+  'changeBotModel',
+  {},
+  async (ctx: ActionContext, botName: string, modelId: string): Promise<Game> => {
+    const game = ctx.game;
+    const bot = game.bots.find((b) => b.name === botName);
+    if (!bot) throw new Error(`No character named ${botName} at this table.`);
+    if (bot.aiType === modelId) return sanitizeGame(game);
+
+    const { tier } = await getTierAndKeys(ctx.userEmail);
+    validateModelUsageForTier(
+      tier,
+      game.gameMasterAiType,
+      game.bots.map((b) => (b.name === botName ? modelId : b.aiType)),
+    );
+
+    const bots = game.bots.map((b) => (b.name === botName ? { ...b, aiType: modelId } : b));
+    await db.collection(COLLECTIONS.games).doc(game.id).update({ bots });
+    game.bots = bots;
+    ctx.logger.info('bot model changed', { botName, modelId });
+    return sanitizeGame(game);
+  },
+);
+
 // ---- internals ----
 
 /** Turn a failed model call into the state that drives the banner and the retry prompt. */
