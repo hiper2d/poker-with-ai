@@ -32,11 +32,12 @@ export default async function NavBar() {
             in wide theme fonts, and any horizontal overflow makes phones zoom the page out */}
         <Link href="/" className="flex min-w-0 items-baseline gap-2.5">
           <span className="min-w-0 truncate font-serif text-[22px] tracking-[0.04em] text-gold-pale sm:text-[26px]">Poker with AI</span>
-          {/* sacrificed on narrow screens so the session buttons stay on screen */}
-          <span className="label-caps hidden text-[10px] md:inline">No-limit hold&rsquo;em</span>
+          {/* sacrificed below xl so the links and session buttons never clip */}
+          <span className="label-caps hidden text-[10px] xl:inline">No-limit hold&rsquo;em</span>
         </Link>
-        {/* wide screens: links inline; narrow: grouped into the Menu dropdown */}
-        <nav className="hidden flex-1 gap-1 overflow-x-auto md:flex">
+        {/* lg+: links inline; below: the Menu dropdown. The handoff must happen while
+            everything still fits — md left a band where links silently clipped instead */}
+        <nav className="hidden flex-1 gap-1 overflow-x-auto lg:flex">
           {NAV_LINKS.map((l) => (
             <Link
               key={l.href}
@@ -47,7 +48,7 @@ export default async function NavBar() {
             </Link>
           ))}
         </nav>
-        <div className="flex-1 md:hidden" />
+        <div className="flex-1 lg:hidden" />
         <NavMenu links={NAV_LINKS} />
         <ThemeSwitcher />
         {session?.user ? (

@@ -60,13 +60,20 @@ What follows is ordered roughly by value.
             `poker_stripeEvents` idempotency, and the shared-account `metadata.app`
             guard (mirror guard added to werewolf's checkout + webhook — commit/deploy
             werewolf BEFORE taking a real poker payment, or top-ups double-credit).
-            - [ ] Fill env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
-                  `NEXT_PUBLIC_STRIPE_PRICE_1/3/5/10`) and register the webhook
-                  endpoint; test-mode end-to-end run (card 4242…).
-- [ ] Cost badges in UI (per-message/per-bot cost display; the data is already on the
-      game doc and in `poker_requestStats`).
+            - [x] Fill env vars (done, TEST mode): prod env set on Vercel, webhook
+                  endpoint registered for pokerwithai.net. Remaining: test-mode
+                  end-to-end run (card 4242…), then the live-mode switch (live
+                  products/prices + live key + live webhook — and deploy werewolf's
+                  `metadata.app` guard FIRST, see above).
+- [x] Cost badges in UI (mostly done): seat dialog shows per-bot spend, game dialog
+      (click the theme name) shows total + Pit Boss spend; both allow a permanent
+      tier-validated model switch (`changeBotModel`/`changeGmModel`). Open: per-message
+      cost badges in the chat feed.
 - [ ] Verify the first live billed hand: balance decrement, `poker_requestStats` docs,
       game totals accumulating.
+- [ ] Record FAILED AI calls in `poker_requestStats` (`status: 'error'` + message) —
+      today only successes are written, so a failed call leaves no queryable trace
+      once its lane error is cleared by a retry.
 - [ ] **Mistral agent** (own SDK; only unported provider — keys already in .env).
 
 ## 3. Engine correctness
@@ -79,8 +86,18 @@ What follows is ordered roughly by value.
 
 ## 4. UX polish
 
-- [ ] **Mobile game room**: the design's bottom-sheet chat + fixed action bar
-      (`Poker Parlor.dc.html` has the spec; current layout is desktop-first).
+- [x] **Mobile game room** (portrait — done): fixed-position screen (no page scroll),
+      clamped seats, portrait felt, one-line header, draggable clamped speech bubbles,
+      compaction progress in the top bar, events shown in chat by default. Dev preview
+      + measurement harness: `/dev/table` (dev-only) + `scripts/measure-layout.js`.
+- [ ] **Landscape mobile** is currently unusable — needs its own layout pass
+      (short-viewport arrangement, or a "rotate your phone" interstitial as a stopgap).
+- [ ] **More storytelling**: richer GM narrative beats during play (scene-setting
+      between hands, stakes rising with the blinds — the GM model is already wired).
+- [ ] **Eliminated players go silent**: busted characters drop out of table talk
+      (`liveBots`) — let them keep needling from the rail after losing their stack.
+- [ ] (?) A button to hide the chat completely — undecided; the rail already collapses,
+      this would suppress bubbles + banner too.
 - [ ] **Showdown reveal**: show bots' hole cards on the felt at showdown (data is in
       HAND_RESULT/handHistory; render card faces at the seats briefly).
 - [ ] Elimination + game-over moments (toast/banner when a character busts).
@@ -95,9 +112,18 @@ What follows is ordered roughly by value.
       + stylesheet changed (themes); also rewrite `.design-sync/conventions.md` for the
       semantic token vocabulary (`--t-*`, `r-md`/`r-sm`, theming rules).
 - [ ] TTL policy on `poker_games.expireAt` (one-time, Firebase console/gcloud).
-- [ ] BetterStack: fill `LOGTAIL_SOURCE_TOKEN`/host in `.env` (sink code is ready).
-- [ ] Production deploy prep: own OAuth apps (werewolf's are shared, callback URLs),
-      env strategy, and revisit `firestore.rules` assumptions.
+- [ ] **Better Stack + monitoring**: fill `LOGTAIL_SOURCE_TOKEN`/host in Vercel prod
+      env (sink code is ready). Without it, prod logs die after ~1h (Vercel hobby) —
+      already cost us one undiagnosable bot error. Consider an uptime check too.
+- [x] Production deploy prep (done): live at https://pokerwithai.net on Vercel — own
+      OAuth apps (Google URI added, separate GitHub prod app), prod env vars, Cloudflare
+      DNS (grey-cloud), www→apex 308 redirect (theme/localStorage + session are
+      per-origin!), OG/Twitter card metadata + `public/og.png`.
+- [ ] **SEO**: `llms.txt` for AI search, `robots.txt` + `sitemap.xml`, per-page
+      metadata/canonicals for the public pages (rules, models).
+- [ ] Parallel or background chat compaction: the between-hands COMPACTION steps run
+      sequentially and can hold the next deal for ~a minute on a slow model; the next
+      hand doesn't actually need the summaries — only future prompts do.
 
 ## Reference
 
