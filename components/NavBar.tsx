@@ -25,7 +25,9 @@ export default async function NavBar() {
   // below the fullscreen modals (z-50).
   return (
     <header className="sticky top-0 z-[45] border-b border-line bg-page">
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:gap-5 sm:px-5">
+      {/* fixed height (not padding-driven): the game screen subtracts it exactly, and any
+          drift shows up as a page scrollbar on phones */}
+      <div className="mx-auto flex h-12 max-w-6xl items-center gap-3 px-4 sm:h-14 sm:gap-5 sm:px-5">
         <Link href="/" className="flex flex-none items-baseline gap-2.5">
           <span className="font-serif text-[22px] tracking-[0.04em] text-gold-pale sm:text-[26px]">Poker with AI</span>
           {/* sacrificed on narrow screens so the session buttons stay on screen */}

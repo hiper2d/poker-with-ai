@@ -320,11 +320,13 @@ export default function GameRoom({
     game.hand ?? GAME_CONFIG.blindLevels[game.blindLevel] ?? GAME_CONFIG.blindLevels[0];
 
   return (
-    <div className="relative flex h-[calc(100dvh-3.5rem)] overflow-hidden">
+    // nav bar height (h-12/h-14 + 1px border) is subtracted exactly — off-by-a-few-px
+    // here puts a tiny scroll on the whole page
+    <div className="relative flex h-[calc(100dvh-3rem-1px)] overflow-hidden sm:h-[calc(100dvh-3.5rem-1px)]">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar — a single line on phones: "Hand" and the blinds give way first,
             then the theme name and the thinking notice truncate */}
-        <div className="flex flex-none items-center gap-2.5 border-b border-line px-3 py-3 sm:flex-wrap sm:gap-4 sm:px-6">
+        <div className="flex flex-none items-center gap-2.5 border-b border-line px-3 py-2 sm:flex-wrap sm:gap-4 sm:px-6 sm:py-3">
           <span className="min-w-0 truncate font-serif text-lg tracking-[0.01em] text-cream sm:text-xl">
             {game.theme}
           </span>
@@ -393,17 +395,17 @@ export default function GameRoom({
 
         {/* last event banner — truncates when long; click for the full text */}
         {lastEvent && typeof lastEvent.msg === 'string' && (
-          <div className="flex-none px-6 pt-3">
+          <div className="flex-none px-3 pt-2 sm:px-6 sm:pt-3">
             <button
               key={lastEvent.id}
               onClick={() => setEventOpen(true)}
               title="Show the full event"
-              className="row-in flex w-full items-center gap-3.5 rounded-2xl border border-line bg-panel px-4.5 py-3 text-left shadow-theme transition hover:border-gold-dark"
+              className="row-in flex w-full items-center gap-3.5 rounded-2xl border border-line bg-panel px-3.5 py-2 text-left shadow-theme transition hover:border-gold-dark sm:px-4.5 sm:py-3"
             >
               <span className="h-2 w-2 flex-none rounded-full bg-gold shadow-[0_0_12px_2px_color-mix(in_srgb,var(--t-acc)_50%,transparent)]" />
               <div className="flex min-w-0 flex-col">
                 <div className="text-[10px] uppercase tracking-[0.2em] text-sage">Last event</div>
-                <div className="truncate font-serif text-xl leading-tight text-cream">{lastEvent.msg}</div>
+                <div className="truncate font-serif text-lg leading-tight text-cream sm:text-xl">{lastEvent.msg}</div>
               </div>
               <div className="flex-1" />
               <div className="flex-none text-[11px] tracking-[0.1em] text-sage">
@@ -458,7 +460,8 @@ export default function GameRoom({
         )}
 
         {/* table */}
-        <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-2 pt-6 sm:px-10 sm:pt-8 xl:px-24">
+        {/* pt clears the top seat's overhang (half a pill + the ACTING badge) */}
+        <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-1 pt-4 sm:px-10 sm:pb-2 sm:pt-8 xl:px-24">
           <div className="w-full max-w-[880px]">
             <PokerTable
               game={game}
@@ -979,7 +982,7 @@ function HeroBar({
   return (
     // z-40: the bottom seats hang below the felt (z-20/z-35 with theme tilts) and would
     // otherwise paint over the raise sizer and swallow clicks on its preset pills.
-    <div className="relative z-40 flex-none px-3 pb-4 sm:px-6 sm:pb-5">
+    <div className="relative z-40 flex-none px-3 pb-2.5 sm:px-6 sm:pb-5">
       {myTurn && legal && legal.canRaise && sizerOpen && (
         <div className="mb-3 flex flex-col gap-2.5 r-md shadow-theme border border-line bg-panel p-3.5">
           <div className="flex flex-wrap items-center gap-3">
