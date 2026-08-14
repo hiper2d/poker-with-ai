@@ -60,11 +60,11 @@ What follows is ordered roughly by value.
             `poker_stripeEvents` idempotency, and the shared-account `metadata.app`
             guard (mirror guard added to werewolf's checkout + webhook — commit/deploy
             werewolf BEFORE taking a real poker payment, or top-ups double-credit).
-            - [x] Fill env vars (done, TEST mode): prod env set on Vercel, webhook
-                  endpoint registered for pokerwithai.net. Remaining: test-mode
-                  end-to-end run (card 4242…), then the live-mode switch (live
-                  products/prices + live key + live webhook — and deploy werewolf's
-                  `metadata.app` guard FIRST, see above).
+            - [x] **LIVE and verified** (Aug 14, 2026): real-card top-up credits the
+                  balance end-to-end. Live products/prices, live key (shared with
+                  werewolf), live webhook endpoint; werewolf's `metadata.app` guard
+                  deployed first. Cleanup someday: delete the orphaned test-mode
+                  webhook endpoint in the Stripe dashboard.
 - [x] Cost badges in UI (mostly done): seat dialog shows per-bot spend, game dialog
       (click the theme name) shows total + Pit Boss spend; both allow a permanent
       tier-validated model switch (`changeBotModel`/`changeGmModel`). Open: per-message
