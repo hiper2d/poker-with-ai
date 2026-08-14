@@ -2,11 +2,15 @@ import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import "./globals.css";
 
-const DESCRIPTION = "A No-Limit Hold'em table where AI characters play against you — and talk.";
+const DESCRIPTION =
+  'Play No-Limit Texas Hold’em poker against AI. LLM rivals — Claude, GPT, Gemini, Grok, DeepSeek — bluff, talk at the table, and remember how you play. Free to start.';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://pokerwithai.net'),
-  title: "Poker with AI",
+  title: {
+    default: 'Poker with AI — No-Limit Hold’em Against LLM Rivals',
+    template: '%s — Poker with AI',
+  },
   description: DESCRIPTION,
   openGraph: {
     title: 'Poker with AI',

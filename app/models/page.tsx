@@ -4,9 +4,10 @@ import { CapsLabel, Panel } from '@/components/ui';
 import { FREE_TIER_OUTPUT_PRICE_BANDS, FREE_TIER_THINKING_COST_FACTOR } from '@/config/tiers';
 
 export const metadata: Metadata = {
-  title: 'Models — Poker with AI',
+  title: 'AI Models at the Table',
   description:
-    'Every model you can seat at the table — what it costs to run and where it is available.',
+    'The AI poker roster: ~24 LLMs from 11 labs — Claude, GPT, Gemini, Grok, DeepSeek, Mistral, Qwen and more — what each costs to seat and where it is available.',
+  alternates: { canonical: '/models' },
 };
 
 const PRICE_BANDS = [

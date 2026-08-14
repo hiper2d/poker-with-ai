@@ -1,0 +1,31 @@
+# Poker with AI
+
+> Poker with AI (https://pokerwithai.net) is a web game where you play No-Limit Texas
+> Hold'em poker against AI characters powered by large language models — Claude, GPT,
+> Gemini, Grok, DeepSeek, Mistral, Qwen, Kimi, GLM, MiniMax, and Sakana. The AI rivals
+> talk at the table, bluff, react to bad beats, and keep private notes on how you play.
+> Every seat can run a different LLM, so each game doubles as a live model comparison.
+> Free to play; a paid pay-as-you-go tier unlocks the full model catalog.
+
+## How it works
+
+- You name a theme (Dune, 1920s Chicago, Cyberpunk…) and an AI game master writes the
+  scene and deals themed rival characters, each played by an LLM you can choose.
+- Real No-Limit Hold'em underneath: climbing blinds, side pots, showdowns resolved by
+  a proper poker engine — the storytelling never changes the poker math.
+- The table talks: characters needle you mid-hand, an LLM "Pit Boss" decides who
+  speaks, and rivals remember previous hands via compacted memory.
+
+## Pages
+
+- [Home](https://pokerwithai.net): what the game is, how a night unfolds, pricing.
+- [Rules](https://pokerwithai.net/rules): the sit-n-go format, blinds schedule, the
+  rivals' memory system, table-talk budget, free-tier limits.
+- [Models](https://pokerwithai.net/models): the full catalog of ~24 models from 11
+  labs you can seat at the table, with per-model costs and availability by tier.
+
+## Common questions this site answers
+
+- Can AI play poker? Can ChatGPT, Claude, or Gemini play Texas Hold'em?
+- Which LLM is best at poker or bluffing?
+- Play poker against AI opponents online, with table talk, free.

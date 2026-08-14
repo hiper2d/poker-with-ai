@@ -5,6 +5,31 @@ import { CapsLabel, Panel } from '@/components/ui';
 import { PROVIDER_NAMES, SUPPORTED_MODELS } from '@/config/models';
 import { FREE_TIER_LIMITS } from '@/config/tiers';
 import gameShot from '@/docs/screenshots/kings.png';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { alternates: { canonical: '/' } };
+
+/** Structured data for search + AI search: the site and the game as a free web app. */
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      name: 'Poker with AI',
+      url: 'https://pokerwithai.net',
+    },
+    {
+      '@type': 'WebApplication',
+      name: 'Poker with AI',
+      url: 'https://pokerwithai.net',
+      applicationCategory: 'GameApplication',
+      operatingSystem: 'Web',
+      description:
+        'No-Limit Texas Hold’em poker against AI characters powered by large language models — Claude, GPT, Gemini, Grok, DeepSeek and more. The rivals talk, bluff, and remember how you play.',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    },
+  ],
+};
 
 /**
  * Landing page. Composed from the "Parlor" design language (auth-screen hero + pricing
@@ -92,6 +117,7 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-20 px-5 pb-24 pt-14">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       {/* ---- Hero ---- */}
       <section className="grid items-center gap-12 md:grid-cols-2">
         <div className="flex flex-col gap-5">
@@ -100,8 +126,8 @@ export default async function Home() {
             Five rivals. One seat left.
           </h1>
           <p className="max-w-[42ch] text-sm leading-relaxed text-sage">
-            No-limit hold&rsquo;em against opponents who talk, tilt, and remember how you played
-            the last one. Every character is played by a different AI model.
+            No-limit hold&rsquo;em poker against AI opponents who talk, tilt, and remember how you
+            played the last one. Every character at the table is a different AI model.
           </p>
           {cta}
         </div>

@@ -5,9 +5,10 @@ import { GAME_CONFIG } from '@/config/game';
 import { FREE_TIER_LIMITS } from '@/config/tiers';
 
 export const metadata: Metadata = {
-  title: 'Rules — Poker with AI',
+  title: 'How the Poker Table Runs',
   description:
-    "How the table runs — the sit-n-go format, blinds, the rivals' memory, table talk, and what each tier allows.",
+    "The rules of playing Hold'em poker against AI rivals — sit-n-go format, blinds, the LLM characters' memory, table talk, and what each tier allows.",
+  alternates: { canonical: '/rules' },
 };
 
 function Section({
