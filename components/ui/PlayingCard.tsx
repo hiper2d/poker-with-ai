@@ -13,7 +13,8 @@ export default function PlayingCard({ card, size = 'sm' }: PlayingCardProps) {
   const suit = card[1];
   const red = suit === 'h' || suit === 'd';
   return (
-    <div className={`card-face ${dims} ${red ? 'card-face-red' : ''}`}>
+    // card-suit-* lets themes color the whole card stock per suit (bauhaus blocks)
+    <div className={`card-face card-suit-${suit} ${dims} ${red ? 'card-face-red' : ''}`}>
       {card[0] === 'T' ? '10' : card[0]}
       <span className="card-suit">{SUIT_SYMBOL[suit] ?? suit}</span>
     </div>

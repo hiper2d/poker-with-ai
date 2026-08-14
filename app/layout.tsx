@@ -2,9 +2,26 @@ import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import "./globals.css";
 
+const DESCRIPTION = "A No-Limit Hold'em table where AI characters play against you — and talk.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL('https://pokerwithai.net'),
   title: "Poker with AI",
-  description: "A No-Limit Hold'em table where AI characters play against you — and talk.",
+  description: DESCRIPTION,
+  openGraph: {
+    title: 'Poker with AI',
+    description: DESCRIPTION,
+    url: '/',
+    siteName: 'Poker with AI',
+    type: 'website',
+    images: [{ url: '/og.png', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Poker with AI',
+    description: DESCRIPTION,
+    images: ['/og.png'],
+  },
 };
 
 const THEME_INIT = `try{var t=localStorage.getItem('poker-theme');if(t&&['parlor','pixel','neon','sumi','bauhaus','terminal','sketch'].indexOf(t)>-1)document.documentElement.dataset.theme=t;}catch(e){}`;

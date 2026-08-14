@@ -419,7 +419,7 @@ export default function GameRoom({
               key={lastEvent.id}
               onClick={() => setEventOpen(true)}
               title="Show the full event"
-              className="row-in flex w-full items-center gap-3.5 rounded-2xl border border-line bg-panel px-3.5 py-2 text-left shadow-theme transition hover:border-gold-dark sm:px-4.5 sm:py-3"
+              className="event-banner row-in flex w-full items-center gap-3.5 rounded-2xl border border-line bg-panel px-3.5 py-2 text-left shadow-theme transition hover:border-gold-dark sm:px-4.5 sm:py-3"
             >
               <span className="h-2 w-2 flex-none rounded-full bg-gold shadow-[0_0_12px_2px_color-mix(in_srgb,var(--t-acc)_50%,transparent)]" />
               <div className="flex min-w-0 flex-col">
@@ -1162,9 +1162,12 @@ function PokerTable({
         </>
       }
     >
-      <div className="text-center">
-        <div className="text-[10px] uppercase tracking-[0.24em] text-sage">Pot</div>
-        <div key={pot} className="pot-pulse font-serif text-4xl leading-none tabular-nums text-parchment">
+      <div className="pot-block text-center">
+        <div className="pot-label text-[10px] uppercase tracking-[0.24em] text-sage">Pot</div>
+        <div
+          key={pot}
+          className="pot-amount pot-pulse font-serif text-4xl leading-none tabular-nums text-parchment"
+        >
           {pot.toLocaleString()}
         </div>
       </div>

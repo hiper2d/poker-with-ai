@@ -407,6 +407,119 @@ html {
   }
 }
 
+/* ── bauhaus structural overrides — the template's block language, not just its palette
+      (spec: designs/game-table-bauhaus/GameTableBauhaus.dc.html) ── */
+
+/* card stock is colored per suit: hearts/diamonds red, spades blue, clubs bone */
+[data-theme='bauhaus'] .card-suit-h,
+[data-theme='bauhaus'] .card-suit-d {
+  background: var(--t-red);
+  color: #f0ece1;
+}
+[data-theme='bauhaus'] .card-suit-s {
+  background: var(--t-acc);
+  color: #f0ece1;
+}
+[data-theme='bauhaus'] .card-face-red {
+  color: #f0ece1; /* red ink belongs on bone stock only — on red stock it vanishes */
+}
+
+/* seat plates: [NAME][stack] cells, no avatar; the acting seat's name cell turns red */
+[data-theme='bauhaus'] .seat-pill {
+  gap: 0;
+  padding: 0;
+  border-width: 3px;
+  background: var(--t-bg);
+  overflow: hidden;
+}
+[data-theme='bauhaus'] .seat-avatar,
+[data-theme='bauhaus'] .seat-tag {
+  display: none;
+}
+[data-theme='bauhaus'] .seat-meta {
+  display: flex;
+  align-items: stretch;
+}
+[data-theme='bauhaus'] .seat-title {
+  align-items: center;
+  padding: 5px 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-theme='bauhaus'] .seat-line {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px;
+  background: #141414;
+  color: #f0ece1;
+}
+[data-theme='bauhaus'] .seat-pill-active .seat-title {
+  background: var(--t-red);
+}
+[data-theme='bauhaus'] .seat-pill-active .seat-title span {
+  color: #f0ece1;
+}
+
+/* folded / eliminated seats collapse to a dot and a gray name */
+[data-theme='bauhaus'] .seat-pill-dim {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+[data-theme='bauhaus'] .seat-pill-dim::before {
+  content: '';
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #a8a49a;
+  margin-right: 8px;
+}
+[data-theme='bauhaus'] .seat-pill-dim .seat-title span {
+  color: var(--t-dim);
+}
+[data-theme='bauhaus'] .seat-pill-dim .seat-line {
+  display: none;
+}
+
+/* pot: black label cell + yellow amount cell in one bordered bar */
+[data-theme='bauhaus'] .pot-block {
+  display: flex;
+  align-items: stretch;
+  border: 3px solid #141414;
+  text-align: left;
+}
+[data-theme='bauhaus'] .pot-label {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #141414;
+  color: #f0ece1;
+  font-weight: 700;
+}
+[data-theme='bauhaus'] .pot-amount {
+  padding: 4px 16px;
+  background: var(--t-chip);
+  color: #141414;
+}
+
+/* the last-event banner is the yellow block */
+[data-theme='bauhaus'] .event-banner {
+  border-radius: 0;
+  border-color: #141414;
+  background: var(--t-chip);
+}
+[data-theme='bauhaus'] .event-banner div,
+[data-theme='bauhaus'] .event-banner svg {
+  color: #141414;
+}
+[data-theme='bauhaus'] .event-banner > span:first-of-type {
+  border-radius: 0;
+  box-shadow: none;
+  background: #141414;
+}
+
 @keyframes dealIn {
   from { transform: translateY(-14px) rotate(-6deg); opacity: 0; }
   to { transform: translateY(0) rotate(0); opacity: 1; }

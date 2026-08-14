@@ -36,15 +36,22 @@ export default function SeatPill({
   const line = folded ? 'folded' : lastAction || stack.toLocaleString();
   return (
     <div className="relative">
-      <div className={`seat-pill ${active ? 'seat-pill-active' : ''} ${dimmed ? 'opacity-40' : ''}`}>
-        <Avatar name={name} size="sm" />
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5 leading-tight">
+      {/* seat-* classes are theme styling hooks — bauhaus rebuilds the plate from them */}
+      <div
+        className={`seat-pill ${active ? 'seat-pill-active' : ''} ${
+          dimmed ? 'seat-pill-dim opacity-40' : ''
+        }`}
+      >
+        <span className="seat-avatar">
+          <Avatar name={name} size="sm" />
+        </span>
+        <div className="seat-meta min-w-0">
+          <div className="seat-title flex items-baseline gap-1.5 leading-tight">
             <span className="text-[13px] text-cream">{name}</span>
             {isHuman && <span className="text-[10px] text-sage">you</span>}
-            {tag && !isHuman && <span className="hidden text-[9px] text-sage sm:inline">{tag}</span>}
+            {tag && !isHuman && <span className="seat-tag hidden text-[9px] text-sage sm:inline">{tag}</span>}
           </div>
-          <div className="text-[11px] leading-tight tabular-nums text-sage">
+          <div className="seat-line text-[11px] leading-tight tabular-nums text-sage">
             {line}
             {!folded && lastAction ? ` · ${stack.toLocaleString()}` : ''}
           </div>
