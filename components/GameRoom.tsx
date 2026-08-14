@@ -5,6 +5,7 @@ import {
   advanceChat,
   advanceGame,
   changeBotModel,
+  changeGmModel,
   continueChat,
   humanAction,
   nextHand,
@@ -20,7 +21,7 @@ import { SUPPORTED_MODELS } from '@/config/models';
 import type { ActionType, HandState } from '@/lib/engine/types';
 import { chatBudget, liveBots } from '@/lib/game/chat-router';
 import { getModelPickerOptions, type ModelPickerOption } from '@/lib/model-access';
-import type { Game, GameErrorState, Lane, GameMessage } from '@/models/game';
+import type { Game, GameErrorState, Lane, GameMessage, TokenUsageTotals } from '@/models/game';
 
 const AVATAR_COLORS = ['#5c8f7b', '#8d6a3f', '#a35f6d', '#4f6f8f', '#96608f', '#6f8f4f', '#8f7b4f'];
 const PUMP_DELAY_MS = 600;
@@ -119,6 +120,8 @@ export default function GameRoom({
   const [eventOpen, setEventOpen] = useState(false);
   // Seat dialog: the clicked bot's name — current model, spend so far, model switch.
   const [botDialog, setBotDialog] = useState<string | null>(null);
+  // Game dialog (click the theme name): total cost + the Pit Boss model.
+  const [gameDialog, setGameDialog] = useState(false);
   const gameRef = useRef(game);
   const inFlightRef = useRef(false);
   const chatInFlightRef = useRef(false);
@@ -323,17 +326,23 @@ export default function GameRoom({
     game.hand ?? GAME_CONFIG.blindLevels[game.blindLevel] ?? GAME_CONFIG.blindLevels[0];
 
   return (
-    // nav bar height (h-12/h-14 + 1px border) is subtracted exactly — off-by-a-few-px
-    // here puts a tiny scroll on the whole page. svh, not dvh: dvh grows when the mobile
-    // URL bar collapses, which makes the page scrollable by exactly that amount forever.
-    <div className="relative flex h-[calc(100svh-3rem-1px)] overflow-hidden sm:h-[calc(100svh-3.5rem-1px)]">
+    // Pinned to the viewport edges instead of height-calc'd: every viewport unit fails
+    // some mobile browser (dvh re-creates page scroll when the URL bar collapses, svh
+    // leaves a dead strip when browser chrome is hidden). Fixed under the nav bar
+    // (h-12/h-14 + 1px border), the document has no scrollable overflow at all.
+    <div className="fixed inset-x-0 bottom-0 top-[calc(3rem+1px)] flex overflow-hidden sm:top-[calc(3.5rem+1px)]">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar — a single line on phones: "Hand" and the blinds give way first,
             then the theme name and the thinking notice truncate */}
         <div className="flex flex-none items-center gap-2.5 border-b border-line px-3 py-2 sm:flex-wrap sm:gap-4 sm:px-6 sm:py-3">
-          <span className="min-w-0 truncate font-serif text-lg tracking-[0.01em] text-cream sm:text-xl">
+          <button
+            type="button"
+            onClick={() => setGameDialog(true)}
+            title="Game cost & Pit Boss model"
+            className="min-w-0 truncate text-left font-serif text-lg tracking-[0.01em] text-cream transition hover:text-gold-pale sm:text-xl"
+          >
             {game.theme}
-          </span>
+          </button>
           <div className="h-4 w-px flex-none bg-line" />
           <div className="flex flex-none items-center gap-2.5 text-xs uppercase tracking-[0.08em] text-sage">
             <span>
@@ -355,9 +364,15 @@ export default function GameRoom({
             <span className="min-w-0 truncate text-[11px] uppercase tracking-[0.2em] text-gold-pale">
               {game.hand && !game.hand.complete && game.hand.toAct
                 ? `${game.hand.toAct} is thinking…`
-                : game.status === 'HAND_RESULTS'
-                  ? 'hand complete'
-                  : 'dealing…'}
+                : game.status === 'COMPACTION' && game.gameQueue[0]
+                  ? `${game.gameQueue[0].actor} is ${
+                      game.gameQueue[0].kind === 'COMPACT_CONTEXT'
+                        ? 'distilling their notes…'
+                        : 'memorizing the table talk…'
+                    }`
+                  : game.status === 'HAND_RESULTS'
+                    ? 'hand complete'
+                    : 'dealing…'}
             </span>
           )}
           <Pill
@@ -483,6 +498,9 @@ export default function GameRoom({
             onClose={() => setBotDialog(null)}
             onChanged={setGame}
           />
+        )}
+        {gameDialog && (
+          <GameInfoDialog game={game} onClose={() => setGameDialog(false)} onChanged={setGame} />
         )}
 
         <HeroBar game={game} myTurn={myTurn} acting={acting} onAction={onHumanAction} onNextHand={onNextHand} />
@@ -655,6 +673,84 @@ function fmtUsd(cost: number): string {
   return `$${cost.toFixed(cost > 0 && cost < 0.1 ? 4 : 2)}`;
 }
 
+/** "Spent" row shared by the seat and game dialogs. */
+function SpendRow({ label, usage }: { label: string; usage: TokenUsageTotals | undefined }) {
+  return (
+    <div className="mt-4 flex items-baseline justify-between gap-3 rounded-xl border border-line px-3.5 py-2.5">
+      <CapsLabel>{label}</CapsLabel>
+      {usage ? (
+        <div className="text-right">
+          <div className="font-serif text-lg tabular-nums text-gold-pale">{fmtUsd(usage.costUsd)}</div>
+          <div className="text-[11px] tabular-nums text-sage">
+            {usage.inputTokens.toLocaleString()} in · {usage.outputTokens.toLocaleString()} out
+          </div>
+        </div>
+      ) : (
+        <span className="text-[12px] text-sage">nothing yet</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Tier-aware model switch shared by the seat and game dialogs: loads the options for
+ * the player's tier, shows the current model selected, applies on pick. The server
+ * re-validates, so a rejection (free-tier limits) surfaces here as the error text.
+ */
+function ModelSwitcher({
+  current,
+  onPick,
+  note,
+}: {
+  current: string;
+  onPick: (modelId: string) => Promise<void>;
+  note: string;
+}) {
+  const [options, setOptions] = useState<ModelPickerOption[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getModelAccess()
+      .then((access) => setOptions(getModelPickerOptions(access.tier)))
+      .catch(() => setError('Could not load the model list.'));
+  }, []);
+
+  const pick = async (modelId: string) => {
+    if (busy || modelId === current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onPick(modelId);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4">
+      <CapsLabel className="mb-2">Change model</CapsLabel>
+      {error && <div className="mb-2 text-[12px] text-loss">{error}</div>}
+      {options ? (
+        <div className={busy ? 'pointer-events-none opacity-50' : ''}>
+          <ModelSelect
+            options={options}
+            selected={[current]}
+            onChange={(ids) => ids[0] && void pick(ids[0])}
+            mode="single"
+            placeholder="Pick a new model…"
+          />
+        </div>
+      ) : (
+        !error && <div className="text-[12px] text-sage">Loading models…</div>
+      )}
+      <p className="mt-2 text-[11px] leading-snug text-sage opacity-70">{note}</p>
+    </div>
+  );
+}
+
 /**
  * The seat dialog: who this character runs on, what they've spent, and a switch to
  * another model. The switch is permanent (unlike the failure banner's one-shot retry)
@@ -671,34 +767,9 @@ function BotModelDialog({
   onClose: () => void;
   onChanged: (game: Game) => void;
 }) {
-  const [options, setOptions] = useState<ModelPickerOption[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getModelAccess()
-      .then((access) => setOptions(getModelPickerOptions(access.tier)))
-      .catch(() => setError('Could not load the model list.'));
-  }, []);
-
   const bot = game.bots.find((b) => b.name === botName);
   if (!bot) return null;
   const model = SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
-  const usage = bot.tokenUsage;
-
-  const pick = async (modelId: string) => {
-    if (busy || modelId === bot.aiType) return;
-    setBusy(true);
-    setError(null);
-    try {
-      onChanged(await changeBotModel(game.id, botName, modelId));
-      onClose();
-    } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" onClick={onClose}>
@@ -720,42 +791,78 @@ function BotModelDialog({
             Close
           </button>
         </div>
+        <SpendRow label="Spent this game" usage={bot.tokenUsage} />
+        <ModelSwitcher
+          current={bot.aiType}
+          onPick={async (modelId) => {
+            onChanged(await changeBotModel(game.id, botName, modelId));
+            onClose();
+          }}
+          note={`Applies from ${bot.name}’s next turn — their memory and style stay; only the engine behind them changes.`}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The game dialog (click the theme name): what the whole table has cost so far, and
+ * the Pit Boss — the GM model that narrates, routes chat, and referees — with the
+ * same permanent model switch as the seats.
+ */
+function GameInfoDialog({
+  game,
+  onClose,
+  onChanged,
+}: {
+  game: Game;
+  onClose: () => void;
+  onChanged: (game: Game) => void;
+}) {
+  const gmModel = SUPPORTED_MODELS.find((m) => m.id === game.gameMasterAiType);
+  const botsCost = game.bots.reduce((sum, b) => sum + (b.tokenUsage?.costUsd ?? 0), 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" onClick={onClose}>
+      <div
+        className="w-full max-w-lg r-md border border-line bg-panel p-5 shadow-theme"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="font-serif text-xl leading-tight text-cream">{game.theme}</div>
+            <div className="text-[12px] text-sage">
+              Hand #{game.handNumber} · Pit Boss on {gmModel?.displayName ?? game.gameMasterAiType}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="r-sm flex-none border border-line px-3 py-1.5 text-[13px] text-sage transition hover:border-gold hover:text-cream"
+          >
+            Close
+          </button>
+        </div>
 
         <div className="mt-4 flex items-baseline justify-between gap-3 rounded-xl border border-line px-3.5 py-2.5">
-          <CapsLabel>Spent this game</CapsLabel>
-          {usage ? (
-            <div className="text-right">
-              <div className="font-serif text-lg tabular-nums text-gold-pale">{fmtUsd(usage.costUsd)}</div>
-              <div className="text-[11px] tabular-nums text-sage">
-                {usage.inputTokens.toLocaleString()} in · {usage.outputTokens.toLocaleString()} out
-              </div>
+          <CapsLabel>Game cost so far</CapsLabel>
+          <div className="text-right">
+            <div className="font-serif text-lg tabular-nums text-gold-pale">
+              {fmtUsd(game.totalGameCost ?? 0)}
             </div>
-          ) : (
-            <span className="text-[12px] text-sage">nothing yet</span>
-          )}
-        </div>
-
-        <div className="mt-4">
-          <CapsLabel className="mb-2">Change model</CapsLabel>
-          {error && <div className="mb-2 text-[12px] text-loss">{error}</div>}
-          {options ? (
-            <div className={busy ? 'pointer-events-none opacity-50' : ''}>
-              <ModelSelect
-                options={options}
-                selected={[bot.aiType]}
-                onChange={(ids) => ids[0] && void pick(ids[0])}
-                mode="single"
-                placeholder="Pick a new model…"
-              />
+            <div className="text-[11px] tabular-nums text-sage">
+              characters {fmtUsd(botsCost)} · pit boss {fmtUsd(game.gameMasterTokenUsage?.costUsd ?? 0)}
             </div>
-          ) : (
-            !error && <div className="text-[12px] text-sage">Loading models…</div>
-          )}
-          <p className="mt-2 text-[11px] leading-snug text-sage opacity-70">
-            Applies from {bot.name}&rsquo;s next turn — their memory and style stay; only the
-            engine behind them changes.
-          </p>
+          </div>
         </div>
+        <SpendRow label="Pit Boss spend" usage={game.gameMasterTokenUsage} />
+        <ModelSwitcher
+          current={game.gameMasterAiType}
+          onPick={async (modelId) => {
+            onChanged(await changeGmModel(game.id, modelId));
+            onClose();
+          }}
+          note="The Pit Boss narrates hands, picks who speaks, and referees — a faster model here speeds up every hand."
+        />
       </div>
     </div>
   );

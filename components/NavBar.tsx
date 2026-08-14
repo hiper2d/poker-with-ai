@@ -67,7 +67,22 @@ export default async function NavBar() {
                 await signOut({ redirectTo: '/' });
               }}
             >
-              <button className="pill min-h-9">Leave</button>
+              <button className="pill min-h-9 !px-2.5" title="Sign out" aria-label="Sign out">
+                {/* door with a leaving arrow */}
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13.5H4.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1H10" />
+                  <path d="M13.5 8H7M11 5.5L13.5 8L11 10.5" />
+                </svg>
+              </button>
             </form>
           </div>
         ) : (

@@ -619,6 +619,28 @@ export const changeBotModel = gameAction(
   },
 );
 
+/** Permanently switch the Pit Boss / dealer narration to another model (the game dialog). */
+export const changeGmModel = gameAction(
+  'changeGmModel',
+  {},
+  async (ctx: ActionContext, modelId: string): Promise<Game> => {
+    const game = ctx.game;
+    if (game.gameMasterAiType === modelId) return sanitizeGame(game);
+
+    const { tier } = await getTierAndKeys(ctx.userEmail);
+    validateModelUsageForTier(
+      tier,
+      modelId,
+      game.bots.map((b) => b.aiType),
+    );
+
+    await db.collection(COLLECTIONS.games).doc(game.id).update({ gameMasterAiType: modelId });
+    game.gameMasterAiType = modelId;
+    ctx.logger.info('gm model changed', { modelId });
+    return sanitizeGame(game);
+  },
+);
+
 // ---- internals ----
 
 /** Turn a failed model call into the state that drives the banner and the retry prompt. */
