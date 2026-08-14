@@ -394,8 +394,9 @@ body {
   }
   .table-felt {
     aspect-ratio: 1.05;
-    /* short phones: give up oval height before pushing the action bar off-screen */
-    max-height: 46dvh;
+    /* short phones: give up oval height before pushing the action bar off-screen
+       (svh to match the page height — dvh would grow when the URL bar hides) */
+    max-height: 46svh;
   }
 }
 

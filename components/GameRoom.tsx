@@ -321,8 +321,9 @@ export default function GameRoom({
 
   return (
     // nav bar height (h-12/h-14 + 1px border) is subtracted exactly — off-by-a-few-px
-    // here puts a tiny scroll on the whole page
-    <div className="relative flex h-[calc(100dvh-3rem-1px)] overflow-hidden sm:h-[calc(100dvh-3.5rem-1px)]">
+    // here puts a tiny scroll on the whole page. svh, not dvh: dvh grows when the mobile
+    // URL bar collapses, which makes the page scrollable by exactly that amount forever.
+    <div className="relative flex h-[calc(100svh-3rem-1px)] overflow-hidden sm:h-[calc(100svh-3.5rem-1px)]">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar — a single line on phones: "Hand" and the blinds give way first,
             then the theme name and the thinking notice truncate */}
