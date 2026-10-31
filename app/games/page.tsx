@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { auth } from '@/auth';
 import { listGames } from '@/app/actions/game-actions';
 import DeleteGameButton from '@/components/DeleteGameButton';
+import { sceneUrlOf } from '@/lib/images/view';
 
 export default async function GamesPage() {
   const session = await auth();
@@ -42,6 +43,10 @@ export default async function GamesPage() {
                 href={`/games/${game.id}`}
                 className="flex flex-col overflow-hidden r-md shadow-theme border border-line bg-panel transition hover:border-gold"
               >
+                {sceneUrlOf(game) && (
+                  // eslint-disable-next-line @next/next/no-img-element -- authed, immutable route; no optimizer
+                  <img src={sceneUrlOf(game)} alt="" className="block aspect-[3/1] w-full border-b border-line object-cover" />
+                )}
                 <div className="border-b border-line px-4.5 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="min-w-0 truncate font-serif text-2xl text-cream">{game.theme}</span>

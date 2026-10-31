@@ -58,6 +58,8 @@ export interface Bot {
   story: string;
   personaId: string; // key into config/personas.ts
   aiType: string; // key into config/models.ts
+  /** 1-2 sentences of appearance only — the portrait prompt for this character. */
+  visualDescription?: string;
   voice?: string;
   summaries: string[]; // S1..Sn, appended by compaction
   chatWatermark: number; // messageCounter bound; chat before it is compacted away
@@ -202,8 +204,17 @@ export interface Game {
   gameMasterAiType: string;
   /** GM-model usage (dealer narration + Pit Boss routing), accumulated by cost tracking. */
   gameMasterTokenUsage?: TokenUsageTotals;
-  /** Model cost (pre-markup) of every AI call this game has made, in USD. */
+  /** Model cost (pre-markup) of every AI call this game has made, in USD — images included. */
   totalGameCost?: number;
+  /** The image share of totalGameCost (portrait sheets, scenes), in USD. */
+  totalImagesCost?: number;
+  /** Player-chosen art direction for every picture in this game (sanitized; image prompts only). */
+  artStyle?: string;
+  /**
+   * Portraits and scenes (lib/images). Owned by the image pipeline, which runs beside the game
+   * pump — so saveGame never writes it back (a pump save would clobber a finished draw).
+   */
+  images?: GameImages;
   /** Per-lane retry state. A set error stops that lane's pump until the player retries. */
   gameError?: GameErrorState | null;
   chatError?: GameErrorState | null;
@@ -212,4 +223,38 @@ export interface Game {
   createdAt: number;
   // No `expireAt` here on purpose: it is a storage-only Firestore Timestamp (lib/game/ttl.ts),
   // written at creation, never saved back by the pump and never sent to the client.
+}
+
+/** Where a portrait card was cut from its sheet and the circle inside it (library shape). */
+export interface PortraitFraming {
+  card: { left: number; top: number; width: number; height: number };
+  circle: { x: number; y: number; d: number };
+}
+
+export interface PortraitEntry {
+  framing: PortraitFraming;
+  /** CSS background-size / background-position that frame the circle on the card image. */
+  bg: { size: string; position: string };
+}
+
+export type ImagesStatus = 'pending' | 'generating' | 'ready' | 'failed';
+
+export interface ImageRefusal {
+  kind: 'cast' | 'scene';
+  at: number;
+  message: string;
+}
+
+export interface GameImages {
+  status: ImagesStatus;
+  /** When the current draw claimed the game — a stale 'generating' may be reclaimed. */
+  claimedAt?: number;
+  /** Cache-buster for the image route; changes whenever the stored images change. */
+  version?: number;
+  /** Portrait per image key: `p{seatIndex}` for every seat, `dealer` for the GM. */
+  portraits?: Record<string, PortraitEntry>;
+  /** A welcome scene is stored under the `scene-welcome` key. */
+  scene?: boolean;
+  /** The image model declined a draw (its safety filter) — kept for the record. */
+  refusals?: ImageRefusal[];
 }

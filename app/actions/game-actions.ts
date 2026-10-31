@@ -22,8 +22,14 @@ import { FREE_TIER_LIMITS } from '@/config/tiers';
 import { configureStoryAgent } from '@/config/models';
 import { getUserBalance } from '@/lib/user-balance';
 import { chargeUsageOutsideGame } from '@/lib/cost-tracking';
-import { screenHumanInput } from '@/lib/screen/screen';
+import { ART_STYLE_SET_ASIDE_MESSAGE, screenArtStyle, screenCast, screenHumanInput } from '@/lib/screen/screen';
+import { sanitizeArtStyle } from '@/lib/images/art-style';
+import { runPortraitGeneration } from '@/lib/images/portraits';
+import { after } from 'next/server';
 import { USER_TIERS, type UserTier } from '@/models/user';
+
+/** Appearance text goes verbatim into the portrait prompt; keep it to a short description. */
+const VISUAL_DESCRIPTION_MAX_LENGTH = 400;
 
 async function requireEmail(): Promise<string> {
   const session = await auth();
@@ -70,15 +76,22 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
   const dealt = dealModels(input.botModelIds, botCount, tier, input.gmModelId);
   validateModelUsageForTier(tier, input.gmModelId, dealt);
 
-  // Before any story token: the name and theme go into the story prompt verbatim.
+  // Before any story token: the name and theme go into the story prompt verbatim, and the art
+  // style into every image prompt. An undrawable style is set aside, not rejected.
+  const artStyle = sanitizeArtStyle(input.artStyle);
   const screen = await screenHumanInput({
     source: 'preview',
-    text: `Player name: ${input.humanPlayerName.trim()}\nTheme: ${input.theme.trim()}`,
+    text: [
+      `Player name: ${input.humanPlayerName.trim()}`,
+      `Theme: ${input.theme.trim()}`,
+      ...(artStyle ? [`Art style: ${artStyle}`] : []),
+    ].join('\n'),
     userEmail: email,
     apiKeys,
     tier,
   });
   if (screen.blocked) throw new Error(screen.message);
+  const artStyleNotice = artStyle && screen.imageUnsafe ? ART_STYLE_SET_ASIDE_MESSAGE : undefined;
 
   const gm = createAgent('GM', buildStoryGenSystemPrompt(), input.gmModelId, apiKeys, { userId: email });
   configureStoryAgent(gm);
@@ -107,13 +120,13 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
     ...p,
     modelId: dealt[i % dealt.length],
   }));
-  return { scene: story.scene, characters };
+  return { scene: story.scene, characters, ...(artStyleNotice ? { artStyleNotice } : {}) };
 }
 
 export async function createGame(input: GamePreviewInput, preview: GamePreview): Promise<string> {
   const email = await requireEmail();
   validateInput(input);
-  const { tier } = await getTierAndKeys(email);
+  const { tier, apiKeys } = await getTierAndKeys(email);
   await assertTierAllowsNewGame(email, tier);
   validateModelUsageForTier(
     tier,
@@ -121,12 +134,27 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     preview.characters.map((c) => c.modelId),
   );
 
+  // Everything on the preview is editable after it was screened, and the art style may have been
+  // retyped: judge what is actually submitted. A cast past the picture bar keeps its stories but
+  // loses its appearances (the portraits then follow the stories); a style past it is dropped.
+  const characters = preview.characters.map((c) => ({
+    ...c,
+    visualDescription: (c.visualDescription ?? '').trim().slice(0, VISUAL_DESCRIPTION_MAX_LENGTH),
+  }));
+  const [cast, style] = await Promise.all([
+    screenCast({ scene: preview.scene, characters, userEmail: email, apiKeys, tier }),
+    screenArtStyle({ theme: input.theme, artStyle: sanitizeArtStyle(input.artStyle), userEmail: email, apiKeys, tier }),
+  ]);
+  if (cast.blocked) throw new Error(cast.message);
+  if (cast.imageUnsafe) characters.forEach((c) => (c.visualDescription = ''));
+  const artStyle = style.unsafe ? undefined : sanitizeArtStyle(input.artStyle);
+
   const now = Date.now();
   const id = `${input.theme.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}-${now}`;
 
   const seats: Seat[] = [
     { seatIndex: 0, name: input.humanPlayerName, isHuman: true, stack: GAME_CONFIG.startingStack, status: 'active' },
-    ...preview.characters.map((c, i) => ({
+    ...characters.map((c, i) => ({
       seatIndex: i + 1,
       name: c.name,
       isHuman: false,
@@ -135,12 +163,13 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     })),
   ];
 
-  const bots: Bot[] = preview.characters.map((c) => ({
+  const bots: Bot[] = characters.map((c) => ({
     name: c.name,
     gender: c.gender,
     story: c.story,
     personaId: c.personaId,
     aiType: c.modelId,
+    ...(c.visualDescription ? { visualDescription: c.visualDescription } : {}),
     summaries: [],
     chatWatermark: 0,
   }));
@@ -171,6 +200,9 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     gameRetry: null,
     chatRetry: null,
     createdAt: now,
+    ...(artStyle ? { artStyle } : {}),
+    // Drawn after the response is sent (below); the table opens with initials meanwhile.
+    images: { status: 'pending' },
   };
 
   // expireAt joins after the JSON round-trip, which would turn the Date into a string.
@@ -182,7 +214,17 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     messageType: 'GAME_STORY',
     handNumber: 0,
   });
+  // Portraits take ~20-40 s: drawn after the response so the table opens at once. The game
+  // page re-triggers a draw that never started (ensurePortraits) — the claim makes it idempotent.
+  after(() => runPortraitGeneration(id));
   return id;
+}
+
+/** Safety net for a draw `after()` never ran (a crashed function): the game page calls this when
+ * it finds portraits still pending. Owner only; a no-op unless the game is pending or stale. */
+export async function ensurePortraits(gameId: string): Promise<void> {
+  await getGame(gameId); // ownership check
+  after(() => runPortraitGeneration(gameId));
 }
 
 /** Delete a table for good — the game doc and its whole message log. Owner only. */

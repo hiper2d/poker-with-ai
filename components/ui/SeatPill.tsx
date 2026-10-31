@@ -1,4 +1,4 @@
-import Avatar from './Avatar';
+import Avatar, { type AvatarProps } from './Avatar';
 
 export interface SeatPillProps {
   name: string;
@@ -18,6 +18,8 @@ export interface SeatPillProps {
   dealer?: boolean;
   /** blind posted this hand */
   blind?: 'SB' | 'BB';
+  /** drawn portrait for the seat avatar, once ready */
+  portrait?: AvatarProps['portrait'];
 }
 
 /** A player at the table — themed seat plate. Position it absolutely from the parent. */
@@ -32,6 +34,7 @@ export default function SeatPill({
   dimmed = false,
   dealer = false,
   blind,
+  portrait,
 }: SeatPillProps) {
   const line = folded ? 'folded' : lastAction || stack.toLocaleString();
   return (
@@ -43,7 +46,7 @@ export default function SeatPill({
         }`}
       >
         <span className="seat-avatar">
-          <Avatar name={name} size="sm" />
+          <Avatar name={name} size="sm" portrait={portrait} />
         </span>
         <div className="seat-meta min-w-0">
           <div className="seat-title flex items-baseline gap-1.5 leading-tight">

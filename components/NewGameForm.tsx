@@ -6,6 +6,7 @@ import { createGame, previewGame } from '@/app/actions/game-actions';
 import type { ModelAccess } from '@/app/actions/user-actions';
 import { getModelAccess } from '@/app/actions/user-actions';
 import ExpandableTextarea from '@/components/ExpandableTextarea';
+import { ART_STYLE_MAX_LENGTH } from '@/lib/images/art-style';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, Panel, Pill } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
@@ -29,6 +30,8 @@ const DEFAULT_BOT_MODELS = SUPPORTED_MODELS.map((m) => m.id);
 export default function NewGameForm() {
   const router = useRouter();
   const [theme, setTheme] = useState('');
+  const [artStyle, setArtStyle] = useState('');
+  const [artStyleNotice, setArtStyleNotice] = useState<string | null>(null);
   const [humanPlayerName, setHumanPlayerName] = useState('');
   const [playerCount, setPlayerCount] = useState(4);
   const [botModelIds, setBotModelIds] = useState<string[]>(DEFAULT_BOT_MODELS);
@@ -38,7 +41,7 @@ export default function NewGameForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const input: GamePreviewInput = { theme, humanPlayerName, playerCount, botModelIds, gmModelId };
+  const input: GamePreviewInput = { theme, humanPlayerName, playerCount, botModelIds, gmModelId, artStyle };
 
   // Once the tier loads, drop selections the tier doesn't allow and re-seat the GM.
   useEffect(() => {
@@ -77,7 +80,11 @@ export default function NewGameForm() {
     startTransition(async () => {
       setError(null);
       try {
-        setPreview(await previewGame(input));
+        const dealt = await previewGame(input);
+        setPreview(dealt);
+        // The screen judged the style undrawable: clear it so what the player sees is what is used.
+        setArtStyleNotice(dealt.artStyleNotice ?? null);
+        if (dealt.artStyleNotice) setArtStyle('');
       } catch (e) {
         setError(String(e instanceof Error ? e.message : e));
       }
@@ -135,6 +142,21 @@ export default function NewGameForm() {
           placeholder="Dune, Cyberpunk Night City, 1920s Chicago…"
           className="w-full r-sm border border-line bg-transparent px-4 py-3 font-serif text-xl text-cream outline-none placeholder:text-sage focus:border-gold"
         />
+        <div className="mt-4 flex items-baseline justify-between gap-3">
+          <CapsLabel className="mb-2">Art style</CapsLabel>
+          <span className="text-xs text-sage-dim">optional — portraits and scenes</span>
+        </div>
+        <input
+          value={artStyle}
+          onChange={(e) => {
+            setArtStyle(e.target.value);
+            setArtStyleNotice(null);
+          }}
+          maxLength={ART_STYLE_MAX_LENGTH}
+          placeholder="Oil painting, noir comic, 16-bit pixel art… (blank = fits the theme)"
+          className="w-full r-sm border border-line bg-transparent px-4 py-2.5 text-[15px] text-cream outline-none placeholder:text-sage focus:border-gold"
+        />
+        {artStyleNotice && <p className="mt-2 text-xs text-loss">{artStyleNotice}</p>}
       </Panel>
 
       <Panel className="grid gap-4 p-5 md:grid-cols-2">
@@ -273,6 +295,17 @@ export default function NewGameForm() {
                   placeholder="Character background and table demeanor…"
                   className="w-full r-sm border border-transparent bg-transparent px-0 py-0 text-sm leading-relaxed text-body outline-none transition focus:border-gold focus:px-3 focus:py-2"
                 />
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-sage-dim">Looks</div>
+                  <ExpandableTextarea
+                    value={c.visualDescription ?? ''}
+                    onChange={(e) => updateCharacter(i, { visualDescription: e.target.value })}
+                    minHeight={44}
+                    aria-label="Character appearance"
+                    placeholder="What the portrait shows: face, hair, clothes…"
+                    className="w-full r-sm border border-transparent bg-transparent px-0 py-0 text-[13px] italic leading-relaxed text-sage outline-none transition focus:border-gold focus:px-3 focus:py-2"
+                  />
+                </div>
                 <div className="mt-auto flex items-center gap-2.5 text-[11px]">
                   <span className="flex-none text-sage-dim">Played by</span>
                   <ModelSelect

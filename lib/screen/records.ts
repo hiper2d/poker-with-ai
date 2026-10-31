@@ -13,7 +13,7 @@
 import { COLLECTIONS, db, stripUndefined } from '@/lib/firebase/server';
 import { logger } from '@/lib/logging/logger';
 
-export type ScreenSource = 'chat' | 'preview';
+export type ScreenSource = 'chat' | 'preview' | 'art_style' | 'cast';
 export type ScreenVerdict = 'ok' | 'grey' | 'would_block' | 'error';
 export type ScreenMode = 'off' | 'monitor' | 'enforce';
 
@@ -31,6 +31,10 @@ export interface ScreenJudgement {
   /** Probability mass on the top two risk levels. */
   highRisk: number | null;
   flags: Record<string, number> | null;
+  /** Image-filter refusal probability; null where the image questions were not asked (chat). */
+  imageRefusal?: number | null;
+  /** A real person drawn sexualized; same sources as imageRefusal. */
+  imagePerson?: number | null;
   answers?: Record<string, unknown>;
   inputTokens?: number;
   costUSD?: number;

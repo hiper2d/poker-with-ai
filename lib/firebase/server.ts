@@ -46,5 +46,7 @@ export const COLLECTIONS = {
   requestStats: 'poker_requestStats',
   stripeEvents: 'poker_stripeEvents',
   screenCalls: 'poker_screenCalls',
+  /** Subcollection of a game: portraits, scenes and the kept sheet (lib/images/portraits.ts). */
+  images: 'poker_images',
   config: 'config',
 } as const;

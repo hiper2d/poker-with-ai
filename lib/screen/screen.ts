@@ -15,9 +15,10 @@
  * fail: the input goes through (logged, recorded) — provider filters stay as the backstop, and
  * screening never makes a game stuck. `screenHumanInput` never throws.
  *
- * Not screened yet: the cast posted back to createGame (model-written, not editable in the UI).
- * Werewolf's art-style / cast / voice sources and the image questions join with the features
- * that bring those inputs.
+ * Where text reaches an image prompt (the setup's art style, the cast's appearances) werewolf's two
+ * picture questions are asked too. They never reject text: past the bar the caller sets the art
+ * style or the appearances aside, in monitor mode as well — that only steers prompts away from a
+ * draw Gemini would refuse.
  */
 import type { TokenUsage } from '@hiper2d/ai-agents';
 import { chargeUsageOutsideGame, recordScreenUsage } from '@/lib/cost-tracking';
@@ -38,8 +39,12 @@ import {
   OPENAI_DECISIONS_MODEL,
 } from '@/lib/screen/openai-decisions-client';
 import {
+  SCREEN_CONTEXT_ART_STYLE,
+  SCREEN_CONTEXT_CAST,
   SCREEN_CONTEXT_CHAT,
   SCREEN_CONTEXT_PREVIEW,
+  SCREEN_IMAGE_PERSON_QUESTION,
+  SCREEN_IMAGE_QUESTION,
   SCREEN_FLAG_QUESTIONS,
   SCREEN_PROMPT_VERSION,
   SCREEN_RISK_LEVELS,
@@ -72,9 +77,15 @@ export const SCREEN_CONFIG = {
   /** Past this a judge is stalled and the human would be waiting on it (werewolf p99 ≈ 314 ms). */
   TIMEOUT_MS: 3_000,
   DECISIONS_TIMEOUT_MS: 3_000,
+  /** Either picture question at or above this sets the art style / appearances aside. */
+  IMAGE_REFUSAL_PROBABILITY: 0.6,
 } as const;
 
-export type ScreenQuestions = { risk: JevScoreQuestion } & Record<ScreenFlag, JevNoulQuestion>;
+export type ScreenQuestions = {
+  risk: JevScoreQuestion;
+  image?: JevNoulQuestion;
+  image_person?: JevNoulQuestion;
+} & Record<ScreenFlag, JevNoulQuestion>;
 
 export interface ScreenDecision {
   verdict: Exclude<ScreenVerdict, 'error'>;
@@ -82,6 +93,9 @@ export interface ScreenDecision {
   riskScore: number;
   highRisk: number;
   flags: Record<ScreenFlag, number>;
+  /** The picture questions' probabilities; null when not asked. Outside the verdict. */
+  imageRefusal: number | null;
+  imagePerson: number | null;
 }
 
 export interface ScreenInput {
@@ -103,7 +117,14 @@ export interface ScreenOutcome {
   blocked: boolean;
   /** What to show the player when blocked. */
   message?: string;
+  /** The deciding judge put a picture question past the bar: drop the text from image prompts.
+   * False when not asked, skipped or failed. */
+  imageUnsafe: boolean;
 }
+
+/** Shown under the art style field when the setup's style was set aside. */
+export const ART_STYLE_SET_ASIDE_MESSAGE =
+  'Your art style was set aside: the image model would refuse to draw it. Portraits and scenes will follow the theme instead.';
 
 interface ScreenJudge {
   label: string;
@@ -137,12 +158,19 @@ const TOP_LEVELS = [SCREEN_RISK_LEVELS.length - 2, SCREEN_RISK_LEVELS.length - 1
 const CONTEXT_BY_SOURCE: Record<ScreenSource, string> = {
   chat: SCREEN_CONTEXT_CHAT,
   preview: SCREEN_CONTEXT_PREVIEW,
+  art_style: SCREEN_CONTEXT_ART_STYLE,
+  cast: SCREEN_CONTEXT_CAST,
 };
+
+/** Sources whose text reaches an image prompt, so the picture questions are asked alongside. */
+const IMAGE_SOURCES: ReadonlySet<ScreenSource> = new Set(['preview', 'art_style', 'cast']);
 
 /** What a rejection message calls the input. */
 const WHAT_BY_SOURCE: Record<ScreenSource, string> = {
   chat: 'This message',
   preview: 'This game setup',
+  art_style: 'This art style',
+  cast: 'This cast',
 };
 
 /** The judges with a key, in order of precedence: the first that answers decides. */
@@ -160,6 +188,12 @@ export function buildScreenRequest(source: ScreenSource, text: string): { state:
   const questions = {
     risk: { type: 'score', instructions: SCREEN_RISK_QUESTION, criteria: [...SCREEN_RISK_LEVELS] },
     ...Object.fromEntries(FLAG_NAMES.map((flag) => [flag, { type: 'noul', instructions: SCREEN_FLAG_QUESTIONS[flag] }])),
+    ...(IMAGE_SOURCES.has(source)
+      ? {
+          image: { type: 'noul', instructions: SCREEN_IMAGE_QUESTION },
+          image_person: { type: 'noul', instructions: SCREEN_IMAGE_PERSON_QUESTION },
+        }
+      : {}),
   } as ScreenQuestions;
   return { state, questions };
 }
@@ -171,17 +205,25 @@ export function decideScreen(answers: Record<string, any>, config = SCREEN_CONFI
   const riskScore = Number(risk.score) || 0;
   const highRisk = TOP_LEVELS.reduce((sum, level) => sum + (Number(risk.probabilities?.[level]) || 0), 0);
   const flags = Object.fromEntries(FLAG_NAMES.map((flag) => [flag, Number(answers?.[flag]?.noul) || 0])) as Record<ScreenFlag, number>;
+  const probability = (q: string) => (answers?.[q]?.noul === undefined ? null : Number(answers[q].noul) || 0);
+  const scores = { riskScore, highRisk, flags, imageRefusal: probability('image'), imagePerson: probability('image_person') };
 
   // A hard flag names the reason even when the score agrees, so the message to the player is specific.
   for (const [flag, threshold] of Object.entries(config.HARD_FLAGS) as [ScreenFlag, number][]) {
-    if (flags[flag] >= threshold) return { verdict: 'would_block', reason: flag, riskScore, highRisk, flags };
+    if (flags[flag] >= threshold) return { verdict: 'would_block', reason: flag, ...scores };
   }
   if (highRisk >= config.HIGH_RISK_PROBABILITY) {
     const strongest = FLAG_NAMES.reduce((best, flag) => (flags[flag] > flags[best] ? flag : best), FLAG_NAMES[0]);
-    return { verdict: 'grey', reason: flags[strongest] >= 0.5 ? strongest : 'score', riskScore, highRisk, flags };
+    return { verdict: 'grey', reason: flags[strongest] >= 0.5 ? strongest : 'score', ...scores };
   }
-  if (riskScore >= config.GREY_SCORE) return { verdict: 'grey', reason: null, riskScore, highRisk, flags };
-  return { verdict: 'ok', reason: null, riskScore, highRisk, flags };
+  if (riskScore >= config.GREY_SCORE) return { verdict: 'grey', reason: null, ...scores };
+  return { verdict: 'ok', reason: null, ...scores };
+}
+
+/** Pure: is either picture question past the bar (nudity, or a sexualized real person)? */
+export function isImageUnsafe(decision: Pick<ScreenDecision, 'imageRefusal' | 'imagePerson'>, config = SCREEN_CONFIG): boolean {
+  const past = (p: number | null) => p !== null && p >= config.IMAGE_REFUSAL_PROBABILITY;
+  return past(decision.imageRefusal) || past(decision.imagePerson);
 }
 
 /** What the player reads when the input is rejected. Names the category, never the score. */
@@ -209,6 +251,7 @@ function toJudgement(attempt: ScreenAttempt): ScreenJudgement {
   return {
     model: attempt.result.model, verdict: decision.verdict, reason: decision.reason,
     riskScore: decision.riskScore, highRisk: decision.highRisk, flags: decision.flags,
+    imageRefusal: decision.imageRefusal, imagePerson: decision.imagePerson,
     answers: attempt.result.answers as Record<string, unknown>, inputTokens: attempt.result.inputTokens,
     costUSD: attempt.result.costUSD, durationMs: attempt.result.durationMs,
   };
@@ -234,7 +277,7 @@ async function billJudge(input: ScreenInput, attempt: ScreenAttempt): Promise<vo
  * Skips entirely (no call, no record) without a judge key, when the mode is `off`, or on empty text.
  */
 export async function screenHumanInput(input: ScreenInput): Promise<ScreenOutcome> {
-  const skipped = (mode: ScreenMode): ScreenOutcome => ({ verdict: 'skipped', reason: null, mode, blocked: false });
+  const skipped = (mode: ScreenMode): ScreenOutcome => ({ verdict: 'skipped', reason: null, mode, blocked: false, imageUnsafe: false });
   const judges = screenJudges(input.apiKeys);
   if (judges.length === 0) return skipped('off');
   const mode = await getScreenMode();
@@ -292,15 +335,18 @@ export async function screenHumanInput(input: ScreenInput): Promise<ScreenOutcom
 
   if (!deciding?.result) {
     await saveScreenCall({ ...base, ...toJudgement(attempts[0]), enforced: false, shadow });
-    return { verdict: 'error', reason: null, mode, blocked: false };
+    return { verdict: 'error', reason: null, mode, blocked: false, imageUnsafe: false };
   }
 
   const decision = decideScreen(deciding.result.answers);
   const blocked = mode === 'enforce' && decision.verdict === 'would_block';
+  const imageUnsafe = isImageUnsafe(decision);
   await saveScreenCall({ ...base, ...toJudgement(deciding), enforced: blocked, shadow });
-  log[decision.verdict === 'would_block' ? 'warn' : 'info'](`content screen ${decision.verdict}${blocked ? ' (rejected)' : ''}`, {
+  log[decision.verdict === 'would_block' || imageUnsafe ? 'warn' : 'info'](
+    `content screen ${decision.verdict}${blocked ? ' (rejected)' : ''}${imageUnsafe ? ' (image text set aside)' : ''}`, {
     mode, model: deciding.result.model, verdict: decision.verdict, reason: decision.reason,
     riskScore: decision.riskScore, highRisk: decision.highRisk, durationMs: deciding.result.durationMs,
+    imageRefusal: decision.imageRefusal, imagePerson: decision.imagePerson,
     ...(shadow ? { shadowVerdict: shadow.verdict } : {}),
   });
 
@@ -310,5 +356,62 @@ export async function screenHumanInput(input: ScreenInput): Promise<ScreenOutcom
     mode,
     blocked,
     ...(blocked ? { message: screenRejectionMessage(input.source, decision.reason) } : {}),
+    imageUnsafe,
   };
+}
+
+/**
+ * Screens an art style on its own where it enters an image prompt after the preview judged the
+ * setup: createGame takes the field as the player last typed it, which may not be what the
+ * preview saw. `unsafe: false` without a call when there is no style, and on a skipped or
+ * failed call.
+ */
+export async function screenArtStyle(input: {
+  theme: string;
+  artStyle: string | undefined;
+  userEmail: string;
+  apiKeys: ScreenApiKeys;
+  tier: UserTier;
+}): Promise<{ unsafe: boolean }> {
+  if (!input.artStyle) return { unsafe: false };
+  const outcome = await screenHumanInput({
+    source: 'art_style',
+    text: `Theme: ${input.theme.trim()}\nArt style: ${input.artStyle}`,
+    userEmail: input.userEmail,
+    apiKeys: input.apiKeys,
+    tier: input.tier,
+  });
+  return { unsafe: outcome.imageUnsafe };
+}
+
+/**
+ * Screens the cast as the player submits it to createGame: the scene and every character's
+ * name, story and appearance are editable on the preview after it was judged, the stories sit
+ * in every bot prompt, and the appearances go verbatim into the portrait prompt. One call over
+ * the whole cast. A cast past the picture bar has its appearances set aside by the caller.
+ */
+export async function screenCast(input: {
+  scene: string;
+  characters: { name: string; story: string; visualDescription?: string }[];
+  userEmail: string;
+  apiKeys: ScreenApiKeys;
+  tier: UserTier;
+}): Promise<ScreenOutcome> {
+  const blocks = [
+    `Opening scene: ${input.scene.trim()}`,
+    ...input.characters.map((c) =>
+      [
+        `Character ${c.name.trim()}`,
+        `Backstory: ${c.story.trim()}`,
+        ...(c.visualDescription?.trim() ? [`Appearance: ${c.visualDescription.trim()}`] : []),
+      ].join('\n'),
+    ),
+  ];
+  return screenHumanInput({
+    source: 'cast',
+    text: blocks.join('\n\n'),
+    userEmail: input.userEmail,
+    apiKeys: input.apiKeys,
+    tier: input.tier,
+  });
 }

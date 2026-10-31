@@ -909,6 +909,13 @@ async function saveGame(game: Game): Promise<void> {
     chatRetry: _chatRetry,
     // Storage-only TTL Timestamp (lib/game/ttl.ts): the JSON round-trip below would flatten it.
     expireAt: _expireAt,
+    // Written only by cost transactions and the image pipeline, which run beside this pump
+    // (the chat lane, a portrait draw finishing mid-hand): a stale in-memory copy written back
+    // here would erase what they committed.
+    totalGameCost: _totalGameCost,
+    totalImagesCost: _totalImagesCost,
+    gameMasterTokenUsage: _gameMasterTokenUsage,
+    images: _images,
     ...owned
   } = game as Game & { expireAt?: unknown };
   await db

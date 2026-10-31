@@ -16,10 +16,12 @@ import {
   sendChatMessage,
 } from '@/app/actions/play-actions';
 import { getModelAccess } from '@/app/actions/user-actions';
+import { ensurePortraits, getGame } from '@/app/actions/game-actions';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
 import { findModelConfig } from '@/config/models';
+import { imagesInFlight, portraitOf, sceneUrlOf } from '@/lib/images/view';
 import type { ActionType, HandState } from '@/lib/engine/types';
 import { chatBudget, liveBots } from '@/lib/game/chat-router';
 import { getModelPickerOptions, type ModelPickerOption } from '@/lib/model-access';
@@ -37,6 +39,10 @@ const LOW_BUDGET_WARNING = 3;
 /** The rail shows only the tail of the log (events included when shown) — older talk has
  *  been absorbed into bot memory. */
 const CHAT_FEED_LIMIT = 50;
+
+/** Portrait draws take ~20-40 s; poll for ~3 minutes, then give up quietly (initials stay). */
+const IMAGE_POLL_MS = 4_000;
+const IMAGE_POLL_LIMIT = 45;
 
 function avatarColor(game: Game, name: string): string {
   const idx = game.bots.findIndex((b) => b.name === name);
@@ -201,6 +207,32 @@ export default function GameRoom({
   const bubbleSeenRef = useRef(new Set(initialMessages.map((m) => m.id)));
   const bubbleTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   gameRef.current = game;
+
+  // Portraits are drawn beside the game (lib/images): poll until the draw lands, merging only
+  // what the image pipeline owns so a poll never rolls back the hand in progress. A game still
+  // `pending` on arrival means createGame's after() never ran — ask the server to start it.
+  const imagesPending = imagesInFlight(game);
+  useEffect(() => {
+    if (!imagesPending) return;
+    if (gameRef.current.images?.status === 'pending') void ensurePortraits(gameRef.current.id).catch(() => {});
+    let polls = 0;
+    const timer = setInterval(async () => {
+      if (++polls > IMAGE_POLL_LIMIT) return clearInterval(timer);
+      try {
+        const fresh = await getGame(gameRef.current.id);
+        if (imagesInFlight(fresh)) return;
+        setGame((prev) => ({
+          ...prev,
+          images: fresh.images,
+          totalGameCost: fresh.totalGameCost,
+          totalImagesCost: fresh.totalImagesCost,
+        }));
+      } catch {
+        // transient — the next tick retries
+      }
+    }, IMAGE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [imagesPending]);
 
   // Seat speech bubbles: any new talk message from a bot pops up at its seat, then fades.
   useEffect(() => {
@@ -962,7 +994,10 @@ function BotModelDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
-          <Avatar name={bot.name} size="sm" />
+          {(() => {
+            const portrait = portraitOf(game, bot.name);
+            return <Avatar name={bot.name} size={portrait ? 'lg' : 'sm'} portrait={portrait} />;
+          })()}
           <div className="min-w-0 flex-1">
             <div className="font-serif text-xl leading-tight text-cream">{bot.name}</div>
             <div className="text-[12px] text-sage">{model?.displayName ?? bot.aiType}</div>
@@ -1333,6 +1368,7 @@ function MobileTable({
                       name={seat.name}
                       stack={behind}
                       avatarColor={avatarColor(game, seat.name)}
+                      portrait={portraitOf(game, seat.name)}
                       isHuman={seat.isHuman}
                       lastAction={lastActionOf(seat.name)}
                       folded={player?.folded}
@@ -1915,6 +1951,7 @@ function PokerTable({
                       name={seat.name}
                       stack={behind}
                       avatarColor={avatarColor(game, seat.name)}
+                      portrait={portraitOf(game, seat.name)}
                       isHuman={seat.isHuman}
                       tag={model?.displayName}
                       lastAction={lastActionOf(seat.name)}
@@ -2369,6 +2406,7 @@ function Rail({
               }
               const isSystem = m.messageType === 'GAME_STORY';
               const mine = m.authorName === game.humanPlayerName && !isSystem;
+              const scene = m.messageType === 'GAME_STORY' ? sceneUrlOf(game) : undefined;
               return (
                 <ChatBubble
                   key={m.id}
@@ -2377,6 +2415,10 @@ function Rail({
                   mine={mine}
                   system={isSystem ? 'plain' : undefined}
                 >
+                  {scene && (
+                    // eslint-disable-next-line @next/next/no-img-element -- authed, immutable route; no optimizer
+                    <img src={scene} alt="The table tonight" className="r-sm mb-2 block w-full border border-line not-italic" />
+                  )}
                   {typeof m.msg === 'string' ? m.msg : JSON.stringify(m.msg)}
                 </ChatBubble>
               );

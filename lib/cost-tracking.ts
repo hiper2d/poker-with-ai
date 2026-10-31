@@ -20,7 +20,8 @@
  * TokenUsage every agent call returns, priced by the model's API name with cache tiers,
  * extended-context and peak-hour rules applied upstream.
  */
-import type { TokenUsage } from '@hiper2d/ai-agents';
+import { API_KEY_CONSTANTS, type TokenUsage } from '@hiper2d/ai-agents';
+import { DEFAULT_IMAGE_MODEL } from '@hiper2d/ai-agents/images';
 import { PAID_TIER_MARKUP } from '@/config/pricing';
 import { findModelConfig, resolveModelId } from '@/config/models';
 import { COLLECTIONS, db } from '@/lib/firebase/server';
@@ -34,7 +35,7 @@ const to6dp = (n: number): number => parseFloat((Number(n) || 0).toFixed(6));
 const REQUEST_STATS_TTL_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
 interface StatContext {
-  actor: 'bot' | 'gm' | 'screen';
+  actor: 'bot' | 'gm' | 'screen' | 'image';
   botName?: string;
   /** For calls outside the model catalog (the content-screen judges), which carry their own key name. */
   apiKeyName?: string;
@@ -233,6 +234,31 @@ export async function recordScreenUsage(
     (fresh) => ({ totalGameCost: to6dp((fresh.totalGameCost ?? 0) + costUsd) }),
     (inMemory, committed) => {
       inMemory.totalGameCost = committed.totalGameCost as number;
+    },
+  );
+}
+
+/**
+ * Record an image draw (portrait sheet + scene). Images bill as cost only — no tokens — and
+ * join both the game total and its image share. Throws on an empty paid balance like every
+ * other charge; the image pipeline catches it (the pictures already exist).
+ */
+export async function recordImageUsage(game: Game, costUSD: number): Promise<void> {
+  if (!(costUSD > 0)) return;
+  const costUsd = to6dp(costUSD);
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUSD: costUsd };
+  await commitUsageAtomically(
+    game,
+    DEFAULT_IMAGE_MODEL,
+    { actor: 'image', apiKeyName: API_KEY_CONSTANTS.GOOGLE },
+    usage,
+    (fresh) => ({
+      totalGameCost: to6dp((fresh.totalGameCost ?? 0) + costUsd),
+      totalImagesCost: to6dp((fresh.totalImagesCost ?? 0) + costUsd),
+    }),
+    (inMemory, committed) => {
+      inMemory.totalGameCost = committed.totalGameCost as number;
+      inMemory.totalImagesCost = committed.totalImagesCost as number;
     },
   );
 }

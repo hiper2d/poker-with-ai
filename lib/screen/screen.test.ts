@@ -25,7 +25,7 @@ import { chargeUsageOutsideGame, recordScreenUsage } from '@/lib/cost-tracking';
 import { askJev } from '@/lib/screen/jev-client';
 import { askOpenAiDecisions } from '@/lib/screen/openai-decisions-client';
 import { getScreenMode, saveScreenCall } from '@/lib/screen/records';
-import { buildScreenRequest, decideScreen, screenHumanInput, screenRejectionMessage } from '@/lib/screen/screen';
+import { buildScreenRequest, decideScreen, isImageUnsafe, screenHumanInput, screenRejectionMessage } from '@/lib/screen/screen';
 import type { Game } from '@/models/game';
 
 const KEYS = { TYPESAFE_API_KEY: 'jev', OPENAI_API_KEY: 'oai' };
@@ -80,6 +80,34 @@ describe('buildScreenRequest', () => {
     expect(Object.keys(questions).sort()).toEqual(
       ['hate', 'jailbreak', 'minors', 'real_harm', 'real_person', 'real_person_sexual', 'risk', 'sexual'],
     );
+  });
+});
+
+describe('picture questions', () => {
+  it('are asked only where text reaches an image prompt', () => {
+    expect(buildScreenRequest('chat', 'x').questions.image).toBeUndefined();
+    for (const source of ['preview', 'art_style', 'cast'] as const) {
+      const { questions } = buildScreenRequest(source, 'x');
+      expect(questions.image).toBeDefined();
+      expect(questions.image_person).toBeDefined();
+    }
+  });
+
+  it('set the text aside past 0.6 on either question, and never change the verdict', () => {
+    const nude = decideScreen({ ...answers(0.3), image: { noul: 0.95 }, image_person: { noul: 0.1 } });
+    expect(nude.verdict).toBe('ok');
+    expect(isImageUnsafe(nude)).toBe(true);
+    expect(isImageUnsafe(decideScreen({ ...answers(0), image: { noul: 0.2 }, image_person: { noul: 0.89 } }))).toBe(true);
+    expect(isImageUnsafe(decideScreen({ ...answers(0), image: { noul: 0.17 }, image_person: { noul: 0.1 } }))).toBe(false);
+    expect(isImageUnsafe(decideScreen(answers(0)))).toBe(false); // not asked (chat)
+  });
+
+  it('report imageUnsafe in monitor mode too', async () => {
+    vi.mocked(askJev).mockResolvedValue(judged({ ...answers(0.2), image: { noul: 0.94 }, image_person: { noul: 0 } } as never) as never);
+    vi.mocked(askOpenAiDecisions).mockResolvedValue(judged(answers(0), 'gpt-6-luna') as never);
+    const out = await screenHumanInput({ source: 'preview', text: 'x', userEmail: 'u', apiKeys: KEYS, tier: 'free' });
+    expect(out).toMatchObject({ verdict: 'ok', blocked: false, imageUnsafe: true });
+    expect(vi.mocked(saveScreenCall).mock.calls[0][0]).toMatchObject({ imageRefusal: 0.94, imagePerson: 0 });
   });
 });
 

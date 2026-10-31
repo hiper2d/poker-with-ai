@@ -11,6 +11,9 @@ export const StoryGenSchema = z.object({
       gender: z.string(),
       story: z.string().describe('3-5 sentences of character background and table demeanor'),
       personaId: z.string().describe('One of the allowed persona ids'),
+      visualDescription: z
+        .string()
+        .describe('1-2 sentences, appearance only: face, hair, build, clothing, a signature item'),
     }),
   ),
 });
@@ -28,7 +31,9 @@ Rules:
 - Every character gets a distinct poker persona from this list (use the id verbatim, spread them out — no duplicates until all are used):
 ${personaList}
 - Names must be unique, short, and never equal to the human player's name.
-- Write stories in the second person ("You are...") — they are private briefings for each character.`;
+- Write stories in the second person ("You are...") — they are private briefings for each character.
+- Give every character a visualDescription: what a portrait painter needs and nothing else — face, hair, build, clothing, one signature item. No name, no backstory, no poker persona. Keep everyone clothed and adult.
+- The visualDescription must be an ORIGINAL look in the spirit of the setting. For a character from a film, a TV show or a game, never describe the actor who played them or their famous screen costume and trademark features — image models refuse to draw a real person's likeness.`;
 }
 
 export function buildStoryGenUserPrompt(theme: string, humanName: string, botCount: number): string {
