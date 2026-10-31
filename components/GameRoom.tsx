@@ -256,7 +256,7 @@ export default function GameRoom({
     };
   }, [chatTick]);
 
-  const onSendChat = useCallback(async (text: string) => {
+  const onSendChat = useCallback(async (text: string): Promise<string | void> => {
     // Optimistic echo: the server persists the message before the Pit Boss routing call,
     // so it's safe to show immediately instead of waiting out an LLM round-trip. The
     // authoritative list from the action replaces it; a failed send takes it back.
@@ -272,6 +272,12 @@ export default function GameRoom({
     setMessages((prev) => [...prev, echo]);
     try {
       const res = await sendChatMessage(gameRef.current.id, text);
+      if (res.rejected) {
+        // The content screen refused it: nothing was saved, so drop the echo and hand the
+        // reason back to the composer, which keeps the draft for rephrasing.
+        setMessages((prev) => prev.filter((m) => m.id !== echo.id));
+        return res.rejected.message;
+      }
       chatRemainingRef.current = res.queue.length;
       setChatQueue(res.queue);
       setMessages(res.messages);
@@ -2168,7 +2174,8 @@ function Rail({
   /** Speakers still queued, in order — [0] is talking now. */
   queue: string[];
   onToggle: () => void;
-  onSend: (text: string) => Promise<void>;
+  /** Resolves to a notice when the message was refused (the draft is kept). */
+  onSend: (text: string) => Promise<string | void>;
   onNudge: () => Promise<void>;
   onPickSpeaker: (name: string) => Promise<void>;
   chatError: GameErrorState | null;
@@ -2177,6 +2184,7 @@ function Rail({
   const endRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [eventsShown, setEventsShown] = useState(true);
   const [prodding, setProdding] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -2233,8 +2241,13 @@ function Rail({
     if (!text || sending || chatStalled || queueBusy) return;
     setSending(true);
     setDraft('');
+    setNotice(null);
     try {
-      await onSend(text);
+      const refused = await onSend(text);
+      if (refused) {
+        setDraft(text);
+        setNotice(refused);
+      }
     } catch {
       setDraft(text);
     } finally {
@@ -2420,10 +2433,18 @@ function Rail({
               </>
             )}
           </div>
+          {notice && (
+            <p role="alert" className="flex-none px-4 pt-2 text-[11px] leading-snug text-loss">
+              {notice}
+            </p>
+          )}
           <div className="flex flex-none items-center gap-2 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
             <input
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setNotice(null);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && void submit()}
               disabled={queueBusy}
               placeholder={

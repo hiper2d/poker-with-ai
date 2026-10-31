@@ -26,15 +26,18 @@ import { findModelConfig, resolveModelId } from '@/config/models';
 import { COLLECTIONS, db } from '@/lib/firebase/server';
 import { applySpending, formatPeriod } from '@/lib/spending';
 import type { Bot, Game, TokenUsageTotals } from '@/models/game';
-import { USER_TIERS, coerceTier } from '@/models/user';
+import { USER_TIERS, coerceTier, type UserTier } from '@/models/user';
+import { deductBalance, updateUserMonthlySpending } from '@/lib/user-balance';
 
 const to6dp = (n: number): number => parseFloat((Number(n) || 0).toFixed(6));
 
 const REQUEST_STATS_TTL_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
 interface StatContext {
-  actor: 'bot' | 'gm';
+  actor: 'bot' | 'gm' | 'screen';
   botName?: string;
+  /** For calls outside the model catalog (the content-screen judges), which carry their own key name. */
+  apiKeyName?: string;
 }
 
 function buildRequestStatDoc(
@@ -56,7 +59,7 @@ function buildRequestStatDoc(
     ...(context.botName ? { botName: context.botName } : {}),
     modelId: resolveModelId(modelId),
     modelApiName: config?.modelApiName ?? modelId,
-    apiKeyName: config?.apiKeyName ?? 'unknown',
+    apiKeyName: context.apiKeyName ?? config?.apiKeyName ?? 'unknown',
     thinkingEnabled: config?.hasThinking ?? false,
     inputTokens: usage.inputTokens,
     cachedInputTokens: usage.cachedInputTokens ?? 0,
@@ -211,3 +214,46 @@ export async function recordGmUsage(
   );
 }
 
+/**
+ * Record a content-screen judge call (lib/screen). It joins the game's running cost like any
+ * GM call, under its own actor so the stats can tell the two apart.
+ */
+export async function recordScreenUsage(
+  game: Game,
+  model: string,
+  apiKeyName: string,
+  usage: TokenUsage,
+): Promise<void> {
+  const costUsd = to6dp(usage.costUSD);
+  await commitUsageAtomically(
+    game,
+    model,
+    { actor: 'screen', apiKeyName },
+    usage,
+    (fresh) => ({ totalGameCost: to6dp((fresh.totalGameCost ?? 0) + costUsd) }),
+    (inMemory, committed) => {
+      inMemory.totalGameCost = committed.totalGameCost as number;
+    },
+  );
+}
+
+/**
+ * Bill a call made before the game doc exists (story generation, the preview screen) — the
+ * one path outside the game transaction (werewolf does the same for previews): paid pays
+ * cost + markup from balance, free records the platform's cost in the spending history.
+ */
+export async function chargeUsageOutsideGame(email: string, tier: UserTier, costUsd: number): Promise<void> {
+  if (!(costUsd > 0)) return;
+  if (tier === USER_TIERS.PAID) {
+    const chargedAmount = to6dp(costUsd * (1 + PAID_TIER_MARKUP));
+    const success = await deductBalance(email, chargedAmount);
+    if (!success) {
+      throw new Error('Insufficient balance. Please add funds on your profile page before starting a game.');
+    }
+    // Record the billed amount (cost + markup), not the raw model cost, so paid
+    // spending history matches what was actually charged.
+    await updateUserMonthlySpending(email, chargedAmount, tier);
+  } else {
+    await updateUserMonthlySpending(email, costUsd, tier);
+  }
+}

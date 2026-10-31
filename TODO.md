@@ -107,7 +107,18 @@ What follows is ordered roughly by value.
       HAND_RESULT/handHistory; render card faces at the seats briefly).
 - [ ] Elimination + game-over moments (toast/banner when a character busts).
 - [ ] Optional: restore per-character avatar colors as a parlor-theme accent.
-- [ ] Optional: TTS voices per character (werewolf parity; voice configs exist there).
+- [ ] **Werewolf parity, phase 2 — portraits + illustrations**: per-seat portraits cut
+      from one Nano Banana sheet (`@hiper2d/ai-agents/images`), welcome scene, art style
+      field (screened with werewolf's image questions), redraw/crop, mid-hand illustrations
+      on eliminations / big all-ins. Images as base64 docs under `poker_games/{id}/avatars`.
+- [ ] **Werewolf parity, phase 3 — voices + table spotlight**: voice casting at story gen,
+      TTS action + client cache (werewolf's pipeline). NOT werewolf's full-screen cinematic
+      overlay — the table is the content in poker; speech and action callouts play at the
+      seats instead, voiced on auto-play.
+- [x] **Content screen (phase 1)** — werewolf's Jev + OpenAI Decisions judges on every
+      human input (`lib/screen/`): the new-game name/theme and table talk. Monitor mode by
+      default; flip `pokerScreenMode` on `config/limits` to `enforce` after reading the
+      `poker_screenCalls` rows. Needs a Firestore TTL policy on `poker_screenCalls.expireAt`.
 
 ## 5. Infra / housekeeping
 

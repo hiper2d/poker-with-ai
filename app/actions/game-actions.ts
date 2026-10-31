@@ -18,10 +18,10 @@ import type { GamePreview, GamePreviewInput } from '@/models/preview';
 import { getTierAndKeys } from '@/lib/api-keys';
 import { dealModels, validateModelUsageForTier } from '@/lib/model-access';
 import { FREE_TIER_LIMITS } from '@/config/tiers';
-import { PAID_TIER_MARKUP } from '@/config/pricing';
 import { configureStoryAgent } from '@/config/models';
-import type { TokenUsage } from '@hiper2d/ai-agents';
-import { deductBalance, getUserBalance, updateUserMonthlySpending } from '@/lib/user-balance';
+import { getUserBalance } from '@/lib/user-balance';
+import { chargeUsageOutsideGame } from '@/lib/cost-tracking';
+import { screenHumanInput } from '@/lib/screen/screen';
 import { USER_TIERS, type UserTier } from '@/models/user';
 
 async function requireEmail(): Promise<string> {
@@ -58,35 +58,6 @@ async function assertTierAllowsNewGame(email: string, tier: UserTier): Promise<v
   }
 }
 
-/**
- * Bill the story-generation call. There is no game doc yet, so this is the one AI call
- * charged outside the game transaction (werewolf does the same for previews): paid pays
- * cost + markup from balance, free records the platform's cost in the spending history.
- */
-async function chargePreviewUsage(
-  email: string,
-  tier: UserTier,
-  usage: TokenUsage | undefined,
-): Promise<void> {
-  if (!usage) return;
-  const costUsd = usage.costUSD;
-  if (!(costUsd > 0)) return;
-  if (tier === USER_TIERS.PAID) {
-    const chargedAmount = parseFloat((costUsd * (1 + PAID_TIER_MARKUP)).toFixed(6));
-    const success = await deductBalance(email, chargedAmount);
-    if (!success) {
-      throw new Error(
-        'Insufficient balance. Please add funds on your profile page before starting a game.',
-      );
-    }
-    // Record the billed amount (cost + markup), not the raw model cost, so paid
-    // spending history matches what was actually charged.
-    await updateUserMonthlySpending(email, chargedAmount, tier);
-  } else {
-    await updateUserMonthlySpending(email, costUsd, tier);
-  }
-}
-
 export async function previewGame(input: GamePreviewInput): Promise<GamePreview> {
   const email = await requireEmail();
   validateInput(input);
@@ -98,12 +69,22 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
   const dealt = dealModels(input.botModelIds, botCount, tier, input.gmModelId);
   validateModelUsageForTier(tier, input.gmModelId, dealt);
 
+  // Before any story token: the name and theme go into the story prompt verbatim.
+  const screen = await screenHumanInput({
+    source: 'preview',
+    text: `Player name: ${input.humanPlayerName.trim()}\nTheme: ${input.theme.trim()}`,
+    userEmail: email,
+    apiKeys,
+    tier,
+  });
+  if (screen.blocked) throw new Error(screen.message);
+
   const gm = createAgent('GM', buildStoryGenSystemPrompt(), input.gmModelId, apiKeys, { userId: email });
   configureStoryAgent(gm);
   const [story, , usage] = await gm.askWithZodSchema(StoryGenSchema, [
     { role: 'user', content: buildStoryGenUserPrompt(input.theme, input.humanPlayerName, botCount) },
   ]);
-  await chargePreviewUsage(email, tier, usage);
+  if (usage) await chargeUsageOutsideGame(email, tier, usage.costUSD);
 
   // Models sometimes deal the human's own character into `players` despite the prompt, or
   // repeat a name. Either would seat two players under one name, so drop them here — and if

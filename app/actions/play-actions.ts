@@ -3,6 +3,7 @@
 import { GAME_CONFIG } from '@/config/game';
 import type { ApiKeyMap } from '@/config/models';
 import { gameAction, type ActionContext } from '@/lib/actions/game-action';
+import { screenHumanInput } from '@/lib/screen/screen';
 import { addMessageToGame, fetchMessages } from '@/lib/actions/messages';
 import {
   botChatReply,
@@ -248,6 +249,8 @@ export interface ChatResult {
   progressed: boolean;
   /** The chat lane's error: non-null means the lane is stopped until the player retries. */
   chatError: GameErrorState | null;
+  /** Set when the content screen rejected the player's message: nothing was saved. */
+  rejected?: { reason: string | null; message: string };
 }
 
 const actorsOf = (queue: ChatEvent[]): string[] => queue.map((e) => e.actor);
@@ -353,6 +356,19 @@ export const sendChatMessage = gameAction(
     }
     // Saying something else is how the player recovers from a failed routing call, so this
     // clears a non-retryable error rather than refusing to run.
+    const apiKeys = await getApiKeysForUser(game.createdBy);
+    // Before the message is saved or reaches any provider (lib/screen/screen.ts).
+    const screen = await screenHumanInput({ source: 'chat', text: trimmed, userEmail: ctx.userEmail, apiKeys, game });
+    if (screen.blocked) {
+      return {
+        messages: await fetchMessages(game.id),
+        queue: actorsOf(game.chatQueue),
+        progressed: false,
+        chatError: laneError(game, 'chat'),
+        rejected: { reason: screen.reason, message: screen.message ?? 'This message can\'t be sent to the AI players.' },
+      };
+    }
+
     await clearLaneError(game, 'chat');
     await consumeRetryPlan(game, 'chat');
 
@@ -373,7 +389,6 @@ export const sendChatMessage = gameAction(
       return { messages, queue: actorsOf(game.chatQueue), progressed: false, chatError: null };
     }
 
-    const apiKeys = await getApiKeysForUser(game.createdBy);
     const cause: RoutingCause = { kind: 'human', author: game.humanPlayerName, text: trimmed };
     try {
       const queue = await routeAndQueue(game, chatVisible(messages), apiKeys, cause, {
