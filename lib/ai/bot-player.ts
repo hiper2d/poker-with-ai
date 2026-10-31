@@ -18,7 +18,7 @@ import { messageCounterOf, unsummarizedChat } from '@/lib/game/compaction';
 import { effectiveModel, retryNote } from '@/lib/game/retry';
 import { logger } from '@/lib/logging/logger';
 import type { Bot, Game, GameMessage } from '@/models/game';
-import { speechOf } from './json-response-parser';
+import { speechOf } from './speech';
 import { BettingDecisionSchema, CompactionSchema, type BettingDecision } from './types';
 
 export interface BotTurn {
@@ -44,9 +44,9 @@ export async function decideBotAction(
   const freshChat = recentChat.filter((m) => messageCounterOf(m) > bot.chatWatermark);
 
   const model = effectiveModel(game, bot.name, bot.aiType, 'game');
-  const reply = await aiCall(bot.name, model, () => {
-    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
-    return agent.askWithSchema(BettingDecisionSchema, [
+  const [decision, , usage] = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys, { gameId: game.id });
+    return agent.askWithZodSchema(BettingDecisionSchema, [
       {
         role: 'user',
         content:
@@ -56,28 +56,29 @@ export async function decideBotAction(
       },
     ]);
   });
-  await recordBotUsage(game, bot.name, model, reply);
+  await recordBotUsage(game, bot.name, model, usage);
 
-  const action = coerce(reply.content, bot.name, legal);
+  const action = coerce(decision, bot.name, legal);
   return {
     action,
-    reasoning: reply.content.reasoning,
-    tableTalk: reply.content.tableTalk?.trim() || undefined,
-    durationMs: reply.durationMs,
+    reasoning: decision.reasoning,
+    tableTalk: decision.tableTalk?.trim() || undefined,
+    costUsd: usage?.costUSD,
+    durationMs: usage?.durationMs ?? 0,
   };
 }
 
 /** In-character one-liner when the game opens. */
 export async function botIntro(game: Game, bot: Bot, apiKeys: ApiKeyMap): Promise<string> {
   const model = effectiveModel(game, bot.name, bot.aiType, 'chat');
-  const reply = await aiCall(bot.name, model, () => {
-    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+  const [text, , usage] = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys, { gameId: game.id });
     return agent.askText([
       { role: 'user', content: buildIntroPrompt() + retryNote(game.chatRetry, bot.name) },
     ]);
   });
-  await recordBotUsage(game, bot.name, model, reply);
-  return speechOf(reply.content);
+  await recordBotUsage(game, bot.name, model, usage);
+  return speechOf(text);
 }
 
 /** Free-chat reply (router/mention driven) — independent of the game loop. */
@@ -91,8 +92,8 @@ export async function botChatReply(
   // Compacted-away chat lives in the summaries riding in the system prompt.
   const freshChat = recentChat.filter((m) => messageCounterOf(m) > bot.chatWatermark);
   const model = effectiveModel(game, bot.name, bot.aiType, 'chat');
-  const reply = await aiCall(bot.name, model, () => {
-    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
+  const [text, , usage] = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys, { gameId: game.id });
     return agent.askText([
       {
         role: 'user',
@@ -103,8 +104,8 @@ export async function botChatReply(
       },
     ]);
   });
-  await recordBotUsage(game, bot.name, model, reply);
-  return speechOf(reply.content);
+  await recordBotUsage(game, bot.name, model, usage);
+  return speechOf(text);
 }
 
 export interface ChatCompactionResult {
@@ -133,18 +134,18 @@ export async function compactBotChat(
 ): Promise<ChatCompactionResult> {
   const pending = unsummarizedChat(messages, bot.chatWatermark);
   const model = effectiveModel(game, bot.name, bot.aiType, 'game');
-  const reply = await aiCall(bot.name, model, () => {
-    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
-    return agent.askWithSchema(CompactionSchema, [
+  const [compaction, , usage] = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys, { gameId: game.id });
+    return agent.askWithZodSchema(CompactionSchema, [
       {
         role: 'user',
         content: buildChatCompactionPrompt(game, bot, pending) + retryNote(game.gameRetry, bot.name),
       },
     ]);
   });
-  await recordBotUsage(game, bot.name, model, reply);
+  await recordBotUsage(game, bot.name, model, usage);
   const watermark = pending.reduce((max, m) => Math.max(max, messageCounterOf(m)), bot.chatWatermark);
-  return { entry: formatCompaction(game.handNumber, reply.content), watermark };
+  return { entry: formatCompaction(game.handNumber, compaction), watermark };
 }
 
 /** COMPACT_CONTEXT: collapse S1..Sn into a single entry when they outgrow the budget. */
@@ -154,17 +155,17 @@ export async function compactBotContext(
   apiKeys: ApiKeyMap,
 ): Promise<string> {
   const model = effectiveModel(game, bot.name, bot.aiType, 'game');
-  const reply = await aiCall(bot.name, model, () => {
-    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys);
-    return agent.askWithSchema(CompactionSchema, [
+  const [compaction, , usage] = await aiCall(bot.name, model, () => {
+    const agent = createAgent(bot.name, buildBotSystemPrompt(game, bot), model, apiKeys, { gameId: game.id });
+    return agent.askWithZodSchema(CompactionSchema, [
       {
         role: 'user',
         content: buildContextCompactionPrompt(bot) + retryNote(game.gameRetry, bot.name),
       },
     ]);
   });
-  await recordBotUsage(game, bot.name, model, reply);
-  return formatCompaction(game.handNumber, reply.content);
+  await recordBotUsage(game, bot.name, model, usage);
+  return formatCompaction(game.handNumber, compaction);
 }
 
 /** Never let a hallucinated action break the hand — degrade toward the safest legal move. */

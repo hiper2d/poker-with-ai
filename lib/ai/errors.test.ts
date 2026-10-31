@@ -7,9 +7,13 @@ describe('isResponseFormatFailure', () => {
     expect(isResponseFormatFailure('Response validation failed: invalid enum value')).toBe(true);
   });
 
-  it('matches empty-content failures — the model produced nothing usable', () => {
-    expect(isResponseFormatFailure('MiniMax returned empty content')).toBe(true);
-    expect(isResponseFormatFailure('OpenAI returned empty content')).toBe(true);
+  it('matches empty/invalid-content failures — the model produced nothing usable', () => {
+    expect(isResponseFormatFailure('Empty or undefined response from MiniMax API')).toBe(true);
+    expect(isResponseFormatFailure('Empty response from Anthropic API')).toBe(true);
+    expect(isResponseFormatFailure('Invalid response format from OpenAI API')).toBe(true);
+    expect(
+      isResponseFormatFailure('deepseek-v4-pro failed to produce a valid response: truncated'),
+    ).toBe(true);
   });
 
   it('rejects transport failures — nothing useful to tell the model', () => {

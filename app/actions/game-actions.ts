@@ -18,7 +18,9 @@ import type { GamePreview, GamePreviewInput } from '@/models/preview';
 import { getTierAndKeys } from '@/lib/api-keys';
 import { dealModels, validateModelUsageForTier } from '@/lib/model-access';
 import { FREE_TIER_LIMITS } from '@/config/tiers';
-import { PAID_TIER_MARKUP, computeCostUsd } from '@/config/pricing';
+import { PAID_TIER_MARKUP } from '@/config/pricing';
+import { configureStoryAgent } from '@/config/models';
+import type { TokenUsage } from '@hiper2d/ai-agents';
 import { deductBalance, getUserBalance, updateUserMonthlySpending } from '@/lib/user-balance';
 import { USER_TIERS, type UserTier } from '@/models/user';
 
@@ -64,11 +66,10 @@ async function assertTierAllowsNewGame(email: string, tier: UserTier): Promise<v
 async function chargePreviewUsage(
   email: string,
   tier: UserTier,
-  modelId: string,
-  usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number } | undefined,
+  usage: TokenUsage | undefined,
 ): Promise<void> {
   if (!usage) return;
-  const costUsd = computeCostUsd(modelId, usage);
+  const costUsd = usage.costUSD;
   if (!(costUsd > 0)) return;
   if (tier === USER_TIERS.PAID) {
     const chargedAmount = parseFloat((costUsd * (1 + PAID_TIER_MARKUP)).toFixed(6));
@@ -97,17 +98,18 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
   const dealt = dealModels(input.botModelIds, botCount, tier, input.gmModelId);
   validateModelUsageForTier(tier, input.gmModelId, dealt);
 
-  const gm = createAgent('GM', buildStoryGenSystemPrompt(), input.gmModelId, apiKeys);
-  const reply = await gm.askWithSchema(StoryGenSchema, [
+  const gm = createAgent('GM', buildStoryGenSystemPrompt(), input.gmModelId, apiKeys, { userId: email });
+  configureStoryAgent(gm);
+  const [story, , usage] = await gm.askWithZodSchema(StoryGenSchema, [
     { role: 'user', content: buildStoryGenUserPrompt(input.theme, input.humanPlayerName, botCount) },
   ]);
-  await chargePreviewUsage(email, tier, input.gmModelId, reply.usage);
+  await chargePreviewUsage(email, tier, usage);
 
   // Models sometimes deal the human's own character into `players` despite the prompt, or
   // repeat a name. Either would seat two players under one name, so drop them here — and if
   // that leaves the table short, say so instead of quietly opening a smaller game.
   const seen = new Set<string>([input.humanPlayerName.trim().toLowerCase()]);
-  const rivals = reply.content.players.filter((p) => {
+  const rivals = story.players.filter((p) => {
     const key = p.name.trim().toLowerCase();
     if (!key || seen.has(key)) return false;
     seen.add(key);
@@ -123,7 +125,7 @@ export async function previewGame(input: GamePreviewInput): Promise<GamePreview>
     ...p,
     modelId: dealt[i % dealt.length],
   }));
-  return { scene: reply.content.scene, characters };
+  return { scene: story.scene, characters };
 }
 
 export async function createGame(input: GamePreviewInput, preview: GamePreview): Promise<string> {

@@ -56,10 +56,12 @@ bills model cost + 30% against a prepaid balance (Stripe top-ups coming soon).
   transition graph; one step per call so the UI renders between steps.
 - **Two queues** — game events (decisions, memory compaction) and chat events (intros,
   replies) pump independently and never write each other's fields.
-- **Vendor-agnostic agent layer** (`lib/ai/`) — one abstract agent, per-vendor
-  implementations with structured output (forced tool use / JSON schema / schema-in-prompt)
-  and a validation retry. Anthropic prompt caching enabled; other providers cache
-  automatically.
+- **Shared agent layer** — model calls go through
+  [`@hiper2d/ai-agents`](https://github.com/hiper2d/ai-agents): one `AbstractAgent` over
+  12 providers with schema-validated asks, thinking extraction, a model catalog and token
+  cost accounting. `lib/ai/` keeps only what is poker's: the prompts, the output schemas,
+  a thin factory (deprecated-id resolution, key checks, logging) and the pit boss / bot
+  player call sites.
 - **Bot memory** — layered context: static system prompt (persona + scene + reads),
   compacted summaries, precise recent hands and chat. Summaries are recursive: when notes
   outgrow their token budget, bots summarize the summaries.

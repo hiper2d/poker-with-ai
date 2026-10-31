@@ -27,13 +27,15 @@ export function isAiCallError(error: unknown): error is AiCallError {
 
 /**
  * True when a failure was a parse/validation problem rather than a transport one — the model
- * produced something, it just wasn't usable. Matches the messages thrown by
- * `json-response-parser.ts` and by Zod. This is the only failure kind worth a retry hint:
- * a timeout or 5xx has nothing to tell the model, so those retry with an unchanged prompt.
+ * produced something, it just wasn't usable. Matches the wording @hiper2d/ai-agents throws
+ * from its lenient JSON parser ("Failed to parse JSON response", "Response validation
+ * failed"), its per-provider empty/invalid-response messages, and ModelInvalidResponseError.
+ * This is the only failure kind worth a retry hint: a timeout or 5xx has nothing to tell the
+ * model, so those retry with an unchanged prompt.
  */
 export function isResponseFormatFailure(details: string | undefined | null): boolean {
   if (!details) return false;
-  return /Failed to parse JSON response|Response validation failed|validation failed|returned empty content/i.test(
+  return /Failed to parse JSON response|Response validation failed|validation failed|Empty (?:or undefined )?response from|Invalid response format from|failed to produce a valid response/i.test(
     details,
   );
 }

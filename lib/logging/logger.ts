@@ -1,6 +1,22 @@
+import { after } from 'next/server';
 import { BetterStackSink } from './betterstack-sink';
 import { ConsoleSink } from './console-sink';
 import type { LogEvent, LogLevel, LogSink } from './types';
+
+/**
+ * BetterStack batches uploads (~1s), but Vercel freezes the function once the
+ * response is sent — undelivered batches would be lost. `after()` keeps the
+ * invocation alive until the sink's delivery promise settles.
+ */
+function keepAliveUntilDelivered(delivery: Promise<void> | void) {
+  if (!delivery) return;
+  const safe = delivery.catch(() => {});
+  try {
+    after(() => safe);
+  } catch {
+    // outside a request scope (tests, scripts) — fire and forget
+  }
+}
 
 /** Fan-out logger: every event goes to all configured sinks. */
 export class Logger {
@@ -26,7 +42,7 @@ export class Logger {
       context: { ...this.base, ...context },
       timestamp: Date.now(),
     };
-    for (const sink of this.sinks) void sink.emit(event);
+    for (const sink of this.sinks) keepAliveUntilDelivered(sink.emit(event));
   }
 }
 

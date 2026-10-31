@@ -9,7 +9,7 @@ import ExpandableTextarea from '@/components/ExpandableTextarea';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, Panel, Pill } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
-import { SUPPORTED_MODELS } from '@/config/models';
+import { LLM_CONSTANTS, SUPPORTED_MODELS } from '@/config/models';
 import { PERSONAS } from '@/config/personas';
 import { deckCapacity, FREE_TIER_UNLIMITED, getModelPickerOptions } from '@/lib/model-access';
 import type { CharacterPreview, GamePreview, GamePreviewInput } from '@/models/preview';
@@ -22,11 +22,9 @@ const SEAT_OPTIONS = Array.from(
   (_, i) => GAME_CONFIG.minPlayers + i,
 );
 
-// Fugu Ultra is opt-in only (expensive) — excluded from the default selection but
-// still selectable in the dropdown. Touching a filter chip replaces this default
-// with the union of the active chips.
-const OPT_IN_ONLY = new Set(['fugu']);
-const DEFAULT_BOT_MODELS = SUPPORTED_MODELS.filter((m) => !OPT_IN_ONLY.has(m.id)).map((m) => m.id);
+// Every catalog model is in the default selection. Touching a filter chip replaces this
+// default with the union of the active chips.
+const DEFAULT_BOT_MODELS = SUPPORTED_MODELS.map((m) => m.id);
 
 export default function NewGameForm() {
   const router = useRouter();
@@ -34,7 +32,7 @@ export default function NewGameForm() {
   const [humanPlayerName, setHumanPlayerName] = useState('');
   const [playerCount, setPlayerCount] = useState(4);
   const [botModelIds, setBotModelIds] = useState<string[]>(DEFAULT_BOT_MODELS);
-  const [gmModelId, setGmModelId] = useState('claude');
+  const [gmModelId, setGmModelId] = useState<string>(LLM_CONSTANTS.CLAUDE_SONNET);
   const [access, setAccess] = useState<ModelAccess | null>(null);
   const [preview, setPreview] = useState<GamePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +53,8 @@ export default function NewGameForm() {
         );
         setBotModelIds((prev) => {
           const kept = prev.filter((id) => enabled.has(id));
-          if (kept.length > 0) return kept;
-          // Fall back to whatever the tier actually allows. Fugu stays opt-in
-          // unless it's the only thing available.
-          const fallback = [...enabled].filter((id) => !OPT_IN_ONLY.has(id));
-          return fallback.length > 0 ? fallback : [...enabled];
+          // Fall back to whatever the tier actually allows.
+          return kept.length > 0 ? kept : [...enabled];
         });
         setGmModelId((prev) => (enabled.has(prev) ? prev : ([...enabled][0] ?? prev)));
       });

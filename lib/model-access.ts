@@ -7,14 +7,15 @@
  * - free: price-banded model subset with per-game bot caps (config/tiers.ts).
  * - paid: full catalog, billed with markup from the prepaid balance.
  */
-import { SUPPORTED_MODELS } from '@/config/models';
+import { findModelConfig, resolveModelId, SUPPORTED_MODELS } from '@/config/models';
 import { getFreeTierPolicy } from '@/config/tiers';
 import type { UserTier } from '@/models/user';
 
 export const FREE_TIER_UNLIMITED = Number.POSITIVE_INFINITY;
 
+/** Accepts retired persisted ids too (see resolveModelId) — game docs may still hold them. */
 function requireModel(modelId: string) {
-  const config = SUPPORTED_MODELS.find((m) => m.id === modelId);
+  const config = findModelConfig(modelId);
   if (!config) throw new Error(`Unsupported AI model: ${modelId}.`);
   return config;
 }
@@ -119,9 +120,12 @@ export function dealModels(
  */
 export function validateModelUsageForTier(
   tier: UserTier,
-  gmModelId: string,
-  botModelIds: string[],
+  gmModelIdRaw: string,
+  botModelIdsRaw: string[],
 ): void {
+  // Resolve retired ids first so an old 'deepseek' and a new 'deepseek-pro' count as one model.
+  const gmModelId = resolveModelId(gmModelIdRaw);
+  const botModelIds = botModelIdsRaw.map(resolveModelId);
   const all = [gmModelId, ...botModelIds];
   for (const id of all) requireModel(id);
   if (tier !== 'free') return; // paid: full catalog on platform keys

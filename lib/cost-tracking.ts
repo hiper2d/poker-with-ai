@@ -15,21 +15,20 @@
  * Callers pass the in-memory Game so its usage totals can be synced with what the
  * transaction committed — play-actions saves the whole game doc afterwards, and a stale
  * in-memory copy would clobber the transaction's writes.
+ *
+ * Cost is never computed here: the library stamps `costUSD` (and `durationMs`) on the
+ * TokenUsage every agent call returns, priced by the model's API name with cache tiers,
+ * extended-context and peak-hour rules applied upstream.
  */
-import { PAID_TIER_MARKUP, computeCostUsd } from '@/config/pricing';
-import { SUPPORTED_MODELS } from '@/config/models';
-import type { TokenUsage } from '@/lib/ai/types';
+import type { TokenUsage } from '@hiper2d/ai-agents';
+import { PAID_TIER_MARKUP } from '@/config/pricing';
+import { findModelConfig, resolveModelId } from '@/config/models';
 import { COLLECTIONS, db } from '@/lib/firebase/server';
 import { applySpending, formatPeriod } from '@/lib/spending';
 import type { Bot, Game, TokenUsageTotals } from '@/models/game';
 import { USER_TIERS, coerceTier } from '@/models/user';
 
 const to6dp = (n: number): number => parseFloat((Number(n) || 0).toFixed(6));
-
-export interface UsageReport {
-  usage?: TokenUsage;
-  durationMs: number;
-}
 
 const REQUEST_STATS_TTL_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
@@ -46,17 +45,16 @@ function buildRequestStatDoc(
   context: StatContext,
   usage: TokenUsage,
   costUsd: number,
-  durationMs: number,
   timestamp: number,
 ): Record<string, unknown> {
-  const config = SUPPORTED_MODELS.find((m) => m.id === modelId);
+  const config = findModelConfig(modelId);
   return {
     gameId,
     userId: userEmail,
     tier: billedTier,
     actor: context.actor,
     ...(context.botName ? { botName: context.botName } : {}),
-    modelId,
+    modelId: resolveModelId(modelId),
     modelApiName: config?.modelApiName ?? modelId,
     apiKeyName: config?.apiKeyName ?? 'unknown',
     thinkingEnabled: config?.hasThinking ?? false,
@@ -65,7 +63,7 @@ function buildRequestStatDoc(
     outputTokens: usage.outputTokens,
     reasoningTokens: usage.reasoningTokens ?? 0,
     costUsd,
-    durationMs,
+    durationMs: usage.durationMs ?? 0,
     status: 'ok',
     createdAt: new Date(timestamp),
     expireAt: new Date(timestamp + REQUEST_STATS_TTL_MS),
@@ -89,13 +87,12 @@ async function commitUsageAtomically(
   game: Game,
   modelId: string,
   context: StatContext,
-  report: UsageReport,
+  usage: TokenUsage | undefined,
   buildGameUpdate: (fresh: Game) => Record<string, unknown> | null,
   syncInMemory: (game: Game, committed: Record<string, unknown>) => void,
 ): Promise<void> {
-  const usage = report.usage;
   if (!usage) return;
-  const costUsd = to6dp(computeCostUsd(modelId, usage));
+  const costUsd = to6dp(usage.costUSD);
   const timestamp = Date.now();
 
   const gameRef = db.collection(COLLECTIONS.games).doc(game.id);
@@ -144,7 +141,7 @@ async function commitUsageAtomically(
       statRef,
       buildRequestStatDoc(
         game.id, game.createdBy, billedTier, modelId, context,
-        usage, costUsd, report.durationMs, timestamp,
+        usage, costUsd, timestamp,
       ),
     );
     committedUpdate = gameUpdate;
@@ -162,16 +159,15 @@ export async function recordBotUsage(
   game: Game,
   botName: string,
   modelId: string,
-  report: UsageReport,
+  usage: TokenUsage | undefined,
 ): Promise<void> {
-  const usage = report.usage;
   if (!usage) return;
-  const costUsd = to6dp(computeCostUsd(modelId, usage));
+  const costUsd = to6dp(usage.costUSD);
   await commitUsageAtomically(
     game,
     modelId,
     { actor: 'bot', botName },
-    report,
+    usage,
     (fresh) => {
       let botFound = false;
       const bots: Bot[] = fresh.bots.map((bot) => {
@@ -192,15 +188,18 @@ export async function recordBotUsage(
 }
 
 /** Record a GM-model call (dealer narration or the Pit Boss router). */
-export async function recordGmUsage(game: Game, modelId: string, report: UsageReport): Promise<void> {
-  const usage = report.usage;
+export async function recordGmUsage(
+  game: Game,
+  modelId: string,
+  usage: TokenUsage | undefined,
+): Promise<void> {
   if (!usage) return;
-  const costUsd = to6dp(computeCostUsd(modelId, usage));
+  const costUsd = to6dp(usage.costUSD);
   await commitUsageAtomically(
     game,
     modelId,
     { actor: 'gm' },
-    report,
+    usage,
     (fresh) => ({
       gameMasterTokenUsage: addTotals(fresh.gameMasterTokenUsage, usage, costUsd),
       totalGameCost: to6dp((fresh.totalGameCost ?? 0) + costUsd),
@@ -211,3 +210,4 @@ export async function recordGmUsage(game: Game, modelId: string, report: UsageRe
     },
   );
 }
+

@@ -19,18 +19,18 @@ describe('free-tier price banding', () => {
   });
 
   it('bands models by effective output price', () => {
-    // deepseek: $1.98 output × 2.5 thinking factor = $4.95 → single-bot band
-    expect(getFreeTierPolicy('deepseek')).toEqual({ available: true, maxBotsPerGame: 1 });
+    // deepseek-pro: $1.98 output × 2.5 thinking factor = $4.95 → single-bot band
+    expect(getFreeTierPolicy('deepseek-pro')).toEqual({ available: true, maxBotsPerGame: 1 });
     // grok: $6 sticker, always-on reasoning (no factor) → single-bot band
     expect(getFreeTierPolicy('grok')).toEqual({ available: true, maxBotsPerGame: 1 });
     // gemini-flash: $3.75 launch-price sticker, always-on reasoning → single-bot band
     expect(getFreeTierPolicy('gemini-flash')).toEqual({ available: true, maxBotsPerGame: 1 });
-    // gpt: $12 → not available
-    expect(getFreeTierPolicy('gpt').available).toBe(false);
-    // claude: $10 × 2.5 = $25 → not available
-    expect(getFreeTierPolicy('claude').available).toBe(false);
-    // fugu: $30 sticker → not available
-    expect(getFreeTierPolicy('fugu').available).toBe(false);
+    // gpt: $5 (GPT-6.1 Terra) → single-bot band
+    expect(getFreeTierPolicy('gpt')).toEqual({ available: true, maxBotsPerGame: 1 });
+    // claude-sonnet: $10 × 2.5 = $25 → not available
+    expect(getFreeTierPolicy('claude-sonnet').available).toBe(false);
+    // gpt-astra: $50 sticker → not available
+    expect(getFreeTierPolicy('gpt-astra').available).toBe(false);
   });
 
   it('applies the kimi hand-set override despite its in-band sticker price', () => {
@@ -40,8 +40,8 @@ describe('free-tier price banding', () => {
 
 describe('getPerGameModelLimit', () => {
   it('is unlimited on the paid tier', () => {
-    expect(getPerGameModelLimit('claude', 'paid')).toBe(FREE_TIER_UNLIMITED);
-    expect(getPerGameModelLimit('fugu', 'paid')).toBe(FREE_TIER_UNLIMITED);
+    expect(getPerGameModelLimit('claude-sonnet', 'paid')).toBe(FREE_TIER_UNLIMITED);
+    expect(getPerGameModelLimit('gpt-astra', 'paid')).toBe(FREE_TIER_UNLIMITED);
   });
 
   it('throws on unknown models', () => {
@@ -52,28 +52,28 @@ describe('getPerGameModelLimit', () => {
 describe('getCandidateModelIdsForTier', () => {
   it('excludes unavailable models on the free tier', () => {
     const ids = getCandidateModelIdsForTier('free');
-    expect(ids).not.toContain('claude');
+    expect(ids).not.toContain('claude-sonnet');
     expect(ids).not.toContain('kimi');
-    expect(ids).not.toContain('fugu');
-    expect(ids).not.toContain('gpt');
-    expect(ids).toContain('deepseek');
+    expect(ids).not.toContain('gpt-astra');
+    expect(ids).not.toContain('gpt-astra');
+    expect(ids).toContain('deepseek-pro');
   });
 
   it('offers the full catalog on paid', () => {
     const ids = getCandidateModelIdsForTier('paid');
-    expect(ids).toContain('claude');
+    expect(ids).toContain('claude-sonnet');
     expect(ids).toContain('kimi');
-    expect(ids).toContain('fugu');
+    expect(ids).toContain('gpt-astra');
   });
 });
 
 describe('getModelPickerOptions', () => {
   it('shows the full catalog on free tier with unavailable models disabled', () => {
     const options = getModelPickerOptions('free');
-    const claude = options.find((o) => o.id === 'claude');
+    const claude = options.find((o) => o.id === 'claude-sonnet');
     expect(claude?.disabled).toBe(true);
-    const deepseek = options.find((o) => o.id === 'deepseek');
-    expect(deepseek).toEqual({ id: 'deepseek', disabled: false, suffix: '(1× per game)' });
+    const deepseek = options.find((o) => o.id === 'deepseek-pro');
+    expect(deepseek).toEqual({ id: 'deepseek-pro', disabled: false, suffix: '(1× per game)' });
   });
 
   it('enables everything on paid', () => {
@@ -84,28 +84,28 @@ describe('getModelPickerOptions', () => {
 
 describe('deckCapacity', () => {
   it('sums per-model caps and reserves the GM slot', () => {
-    // deepseek 1 + grok 1 = 2; GM on grok eats grok's only slot → 1
-    expect(deckCapacity(['deepseek', 'grok'], 'free')).toBe(2);
-    expect(deckCapacity(['deepseek', 'grok'], 'free', 'grok')).toBe(1);
-    expect(deckCapacity(['deepseek'], 'paid')).toBe(FREE_TIER_UNLIMITED);
+    // deepseek-pro 1 + grok 1 = 2; GM on grok eats grok's only slot → 1
+    expect(deckCapacity(['deepseek-pro', 'grok'], 'free')).toBe(2);
+    expect(deckCapacity(['deepseek-pro', 'grok'], 'free', 'grok')).toBe(1);
+    expect(deckCapacity(['deepseek-pro'], 'paid')).toBe(FREE_TIER_UNLIMITED);
   });
 });
 
 describe('dealModels', () => {
   it('cycles freely on the paid tier', () => {
-    const dealt = dealModels(['claude'], 5, 'paid');
-    expect(dealt).toEqual(['claude', 'claude', 'claude', 'claude', 'claude']);
+    const dealt = dealModels(['claude-sonnet'], 5, 'paid');
+    expect(dealt).toEqual(['claude-sonnet', 'claude-sonnet', 'claude-sonnet', 'claude-sonnet', 'claude-sonnet']);
   });
 
   it('respects per-model caps on the free tier', () => {
-    const dealt = dealModels(['deepseek', 'grok'], 2, 'free');
-    expect(dealt.filter((id) => id === 'deepseek')).toHaveLength(1);
+    const dealt = dealModels(['deepseek-pro', 'grok'], 2, 'free');
+    expect(dealt.filter((id) => id === 'deepseek-pro')).toHaveLength(1);
     expect(dealt.filter((id) => id === 'grok')).toHaveLength(1);
   });
 
   it('reserves a slot for the GM model', () => {
     // grok (1) reserved for GM → only deepseek's 1 remains
-    expect(() => dealModels(['deepseek', 'grok'], 2, 'free', 'grok')).toThrow(/cover only 1/);
+    expect(() => dealModels(['deepseek-pro', 'grok'], 2, 'free', 'grok')).toThrow(/cover only 1/);
   });
 
   it('throws when capacity cannot cover the bots', () => {
@@ -113,22 +113,33 @@ describe('dealModels', () => {
   });
 });
 
+describe('retired persisted ids', () => {
+  it('resolve to their catalog ids everywhere a persisted id is read', () => {
+    // 'claude' (pre-library id) is Claude 5 Sonnet: off the free tier, unlimited on paid.
+    expect(getPerGameModelLimit('claude', 'free')).toBe(0);
+    expect(getPerGameModelLimit('claude', 'paid')).toBe(FREE_TIER_UNLIMITED);
+    expect(getFreeTierPolicy('deepseek')).toEqual(getFreeTierPolicy('deepseek-pro'));
+    // An old and a new spelling of the same model share one free-tier cap.
+    expect(() => validateModelUsageForTier('free', 'deepseek', ['deepseek-pro'])).toThrow(/once/);
+  });
+});
+
 describe('validateModelUsageForTier', () => {
   it('counts the GM against free-tier caps', () => {
-    // deepseek capped at 1: GM takes it, the bot copy overflows
-    expect(() => validateModelUsageForTier('free', 'deepseek', ['deepseek'])).toThrow(/once/);
+    // deepseek-pro capped at 1: GM takes it, the bot copy overflows
+    expect(() => validateModelUsageForTier('free', 'deepseek-pro', ['deepseek-pro'])).toThrow(/once/);
     expect(() =>
       validateModelUsageForTier('free', 'deepseek-flash', ['deepseek-flash', 'deepseek-flash']),
     ).not.toThrow();
   });
 
   it('rejects free-tier-unavailable models', () => {
-    expect(() => validateModelUsageForTier('free', 'deepseek', ['claude'])).toThrow(
+    expect(() => validateModelUsageForTier('free', 'deepseek-pro', ['claude-sonnet'])).toThrow(
       /not available on the free tier/,
     );
   });
 
   it('allows the full catalog on paid', () => {
-    expect(() => validateModelUsageForTier('paid', 'claude', ['fugu', 'kimi'])).not.toThrow();
+    expect(() => validateModelUsageForTier('paid', 'claude-sonnet', ['gpt-astra', 'kimi'])).not.toThrow();
   });
 });

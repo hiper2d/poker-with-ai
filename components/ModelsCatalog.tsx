@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Panel } from '@/components/ui';
 import { PROVIDER_NAMES, SUPPORTED_MODELS } from '@/config/models';
-import { MODEL_PRICING } from '@/config/pricing';
+import { getModelPricing } from '@/config/pricing';
 import {
   FREE_TIER_OUTPUT_PRICE_BANDS,
   FREE_TIER_THINKING_COST_FACTOR,
@@ -82,7 +82,7 @@ function policyToBand(maxBots: number, available: boolean): BandId {
 function buildBands(): Record<BandId, CatalogModel[]> {
   const out: Record<BandId, CatalogModel[]> = { unlim: [], one: [], paid: [] };
   for (const config of SUPPORTED_MODELS) {
-    const pricing = MODEL_PRICING[config.id];
+    const pricing = getModelPricing(config.id);
     if (!pricing) continue;
     const policy = getFreeTierPolicy(config.id);
     const band = policyToBand(policy.maxBotsPerGame, policy.available);
@@ -90,14 +90,14 @@ function buildBands(): Record<BandId, CatalogModel[]> {
       id: config.id,
       name: config.displayName,
       provider: PROVIDER_NAMES[config.apiKeyName] ?? config.apiKeyName,
-      inputPrice: pricing.inputPerMTok,
-      cachedPrice: pricing.cachedInputPerMTok ?? null,
-      price: pricing.outputPerMTok,
+      inputPrice: pricing.inputPrice,
+      cachedPrice: pricing.cacheHitPrice ?? null,
+      price: pricing.outputPrice,
       // Effective output price: the sticker rate scaled to include hidden reasoning
       // tokens. Shown only for hybrid thinking models, where the multiplier is known
       // (it's what free-tier banding uses).
       eff: isHybridThinkingModel(config.id)
-        ? pricing.outputPerMTok * FREE_TIER_THINKING_COST_FACTOR
+        ? pricing.outputPrice * FREE_TIER_THINKING_COST_FACTOR
         : null,
     });
   }

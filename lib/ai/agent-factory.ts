@@ -1,43 +1,39 @@
-import type { ApiKeyMap } from '@/config/models';
-import { getModelConfig } from '@/config/models';
-import type { AbstractAgent } from './abstract-agent';
-import { AnthropicAgent } from './anthropic-agent';
-import { GoogleAgent } from './google-agent';
-import { MiniMaxAgent } from './minimax-agent';
-import { OpenAiAgent } from './openai-agent';
+import { AgentFactory, setLlmLogger, type AbstractAgent } from '@hiper2d/ai-agents';
+import { ENV_KEY_FALLBACKS, getModelConfig, type ApiKeyMap, type ApiKeyName } from '@/config/models';
+import { llmLogger } from '@/lib/logging/llm-logger';
 
-/** Creates the right vendor agent for a model id from config/models.ts. */
+// Route the library's agent-activity logging through the app's logging pipeline.
+// Module-load side effect: every agent-creation path goes through this factory, so the
+// logger is always wired before the first agent logs.
+setLlmLogger(llmLogger);
+
+export interface AgentContext {
+  /** Stamped on the agent so the library's request/response logs carry the game. */
+  gameId?: string;
+  /** The paying user, for the same logs. */
+  userId?: string;
+}
+
+/**
+ * Poker's agent factory: resolves deprecated persisted model ids (an app concern) and fails
+ * fast on a missing platform key, then delegates to the library factory for the vendor
+ * agent itself. The vendor mechanics — request shape, structured output, thinking, lenient
+ * JSON parsing, token usage and cost — all live in @hiper2d/ai-agents.
+ */
 export function createAgent(
   botName: string,
   systemPrompt: string,
   modelId: string,
   apiKeys: ApiKeyMap,
-  enableThinking = false,
+  context: AgentContext = {},
 ): AbstractAgent {
   const config = getModelConfig(modelId);
-  const apiKey = apiKeys[config.apiKeyName];
-  if (!apiKey) throw new Error(`Missing ${config.apiKeyName} for model ${modelId}`);
-
-  switch (config.agentKind) {
-    case 'anthropic':
-      return new AnthropicAgent(botName, systemPrompt, config.modelApiName, apiKey, enableThinking, config.maxOutputTokens);
-    case 'openai':
-    case 'openai-compatible':
-      return new OpenAiAgent(
-        botName,
-        systemPrompt,
-        config.modelApiName,
-        apiKey,
-        enableThinking,
-        config.maxOutputTokens,
-        config.baseUrl,
-        config.structuredMode,
-      );
-    case 'google':
-      return new GoogleAgent(botName, systemPrompt, config.modelApiName, apiKey, enableThinking, config.maxOutputTokens);
-    case 'minimax':
-      return new MiniMaxAgent(botName, systemPrompt, config.modelApiName, apiKey, enableThinking, config.maxOutputTokens, config.baseUrl);
-    case 'mistral':
-      throw new Error('Mistral agent not ported yet');
+  if (!apiKeys[config.apiKeyName]) {
+    const envVar = ENV_KEY_FALLBACKS[config.apiKeyName as ApiKeyName];
+    throw new Error(`Missing ${config.apiKeyName} for model ${config.id} (env ${envVar})`);
   }
+  const agent = AgentFactory.createAgent(botName, systemPrompt, config.id, apiKeys);
+  agent.gameId = context.gameId;
+  agent.userId = context.userId;
+  return agent;
 }

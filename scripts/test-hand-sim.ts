@@ -6,7 +6,7 @@ import { applyAction, settleHand, startHand } from '@/lib/engine/betting';
 import type { Game } from '@/models/game';
 import { GAME_STATES } from '@/models/game';
 
-const models = (process.argv[2] ?? 'claude,deepseek,gemini').split(',');
+const models = (process.argv[2] ?? 'claude-sonnet,deepseek-pro,gemini-pro').split(',');
 const apiKeys: ApiKeyMap = {};
 for (const [keyName, envVar] of Object.entries(ENV_KEY_FALLBACKS)) {
   if (process.env[envVar]) apiKeys[keyName as ApiKeyName] = process.env[envVar];

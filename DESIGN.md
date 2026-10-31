@@ -19,7 +19,7 @@ the flow; LLMs only decide actions and chat.
 3. **Typed queue events.** Queue entries are `{ actor, kind, ... }` objects, never bare names.
    The event carries its meaning; the state does not.
 4. **Config as data.** State transitions (`config/state-graph.ts`), table rules
-   (`config/game.ts`), model catalog (`config/models.ts`), pricing (`config/pricing.ts`), and
+   (`config/game.ts`), model catalog overlay (`config/models.ts`), pricing (`config/pricing.ts`), and
    personas (`config/personas.ts`) are separate, logic-free config modules.
 5. **Cross-cutting concerns live once.** Server actions are composed through `gameAction()`
    (auth → load game → state guard → run → persist → error capture → log). No action re-checks
@@ -87,8 +87,13 @@ wins). The engine is format-agnostic; cash games can slot in later.
   `firebase deploy --only firestore:indexes` from either repo deletes the other's
   composite indexes — keep one canonical indexes file.
 - **Auth**: NextAuth v5, GitHub + Google; session email is the user key.
-- **AI layer**: `AbstractAgent` (askText / askWithZodSchema template methods, token usage,
-  thinking support), `AgentFactory` per vendor, user-owned API keys per tier.
+- **AI layer**: `@hiper2d/ai-agents` (shared with werewolf) — `AbstractAgent` with
+  askText / askWithZodSchema, per-vendor agents, thinking, lenient JSON parsing, the model
+  catalog and per-call `costUSD`. The app layers policy on top in `config/models.ts`
+  (catalog shape, env-key fallbacks, retired-id map, story output profile) and
+  `config/tiers.ts` (free-tier price bands); `lib/ai/agent-factory.ts` wires the library's
+  logger into ours and resolves persisted ids before delegating. Model facts (prices, API
+  names, tuning) are fixed upstream and pulled in by a version bump, never patched here.
 - **Tiers**: code wired from day one (free / api / paid), launching API-tier only.
   Stripe + platform keys deferred.
 - **Cost tracking**: per-call transaction — balance, spendings, bot/game usage, requestStats.
@@ -109,7 +114,7 @@ app/                  routes (App Router) + server actions under app/api/
 config/               state-graph, game, models, pricing, personas
 lib/engine/           pure poker engine (no Firestore, no LLM)
 lib/state-machine/    event/handler types + registry
-lib/ai/               agent abstraction + vendor agents
+lib/ai/               prompts, output schemas, factory wrapper, bot player + pit boss
 lib/logging/          LogSink abstraction + sinks
 lib/actions/          gameAction composition wrapper
 lib/firebase/         admin SDK init

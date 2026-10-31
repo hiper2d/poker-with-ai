@@ -6,9 +6,9 @@ import {
   buildStoryGenUserPrompt,
   StoryGenSchema,
 } from '@/lib/ai/prompts/story-gen';
-import { ENV_KEY_FALLBACKS, type ApiKeyMap, type ApiKeyName } from '@/config/models';
+import { configureStoryAgent, ENV_KEY_FALLBACKS, type ApiKeyMap, type ApiKeyName } from '@/config/models';
 
-const modelId = process.argv[2] ?? 'claude';
+const modelId = process.argv[2] ?? 'claude-sonnet';
 const apiKeys: ApiKeyMap = {};
 for (const [keyName, envVar] of Object.entries(ENV_KEY_FALLBACKS)) {
   if (process.env[envVar]) apiKeys[keyName as ApiKeyName] = process.env[envVar];
@@ -16,11 +16,12 @@ for (const [keyName, envVar] of Object.entries(ENV_KEY_FALLBACKS)) {
 
 async function main() {
   const gm = createAgent('GM', buildStoryGenSystemPrompt(), modelId, apiKeys);
-  const reply = await gm.askWithSchema(StoryGenSchema, [
+  configureStoryAgent(gm);
+  const [story, , usage] = await gm.askWithZodSchema(StoryGenSchema, [
     { role: 'user', content: buildStoryGenUserPrompt('Dune', 'Paul', 2) },
   ]);
-  console.log(JSON.stringify(reply.content, null, 2));
-  console.log(`model=${modelId} durationMs=${reply.durationMs} usage=${JSON.stringify(reply.usage)}`);
+  console.log(JSON.stringify(story, null, 2));
+  console.log(`model=${modelId} usage=${JSON.stringify(usage)}`);
 }
 
 main().catch((e) => {

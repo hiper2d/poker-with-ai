@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelTag } from '@/config/models';
-import { getModelConfig, modelIsFast, PROVIDER_NAMES, SUPPORTED_MODELS } from '@/config/models';
+import { findModelConfig, getModelConfig, modelIsFast, PROVIDER_NAMES } from '@/config/models';
 import type { ModelPickerOption } from '@/lib/model-access';
 
 interface ModelSelectProps {
@@ -61,7 +61,7 @@ function providerOf(id: string): string {
 }
 
 function modelOf(id: string) {
-  return SUPPORTED_MODELS.find((m) => m.id === id);
+  return findModelConfig(id);
 }
 
 export default function ModelSelect({

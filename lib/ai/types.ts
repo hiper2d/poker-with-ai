@@ -1,23 +1,8 @@
+/**
+ * The structured outputs poker asks its models for. Message and usage types come from
+ * @hiper2d/ai-agents (AIMessage, TokenUsage); only the app's own schemas live here.
+ */
 import { z } from 'zod';
-
-export interface AiMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens?: number;
-  reasoningTokens?: number;
-}
-
-export interface AgentReply<T = string> {
-  content: T;
-  thinking?: string;
-  usage?: TokenUsage;
-  durationMs: number;
-}
 
 /** The structured output of a bot's betting turn — the heart of the game loop. */
 export const BettingDecisionSchema = z.object({

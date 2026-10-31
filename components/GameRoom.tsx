@@ -19,7 +19,7 @@ import { getModelAccess } from '@/app/actions/user-actions';
 import ModelSelect from '@/components/ModelSelect';
 import { Avatar, Button, CapsLabel, ChatBubble, Pill, PlayingCard, SeatPill, TableFelt } from '@/components/ui';
 import { GAME_CONFIG } from '@/config/game';
-import { SUPPORTED_MODELS } from '@/config/models';
+import { findModelConfig } from '@/config/models';
 import type { ActionType, HandState } from '@/lib/engine/types';
 import { chatBudget, liveBots } from '@/lib/game/chat-router';
 import { getModelPickerOptions, type ModelPickerOption } from '@/lib/model-access';
@@ -732,7 +732,7 @@ function FailureBanner({
       .catch(() => setPickError('Could not load the model list.'));
   }, [picking, options]);
 
-  const model = failure?.model ? SUPPORTED_MODELS.find((m) => m.id === failure.model) : undefined;
+  const model = failure?.model ? findModelConfig(failure.model) : undefined;
 
   const run = async (attempt: () => Promise<void>) => {
     setBusy(true);
@@ -947,7 +947,7 @@ function BotModelDialog({
 }) {
   const bot = game.bots.find((b) => b.name === botName);
   if (!bot) return null;
-  const model = SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
+  const model = findModelConfig(bot.aiType);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" onClick={onClose}>
@@ -1000,7 +1000,7 @@ function GameInfoDialog({
   /** Roster row tap — closes this dialog and opens that character's seat dialog. */
   onSelectBot?: (name: string) => void;
 }) {
-  const gmModel = SUPPORTED_MODELS.find((m) => m.id === game.gameMasterAiType);
+  const gmModel = findModelConfig(game.gameMasterAiType);
   const botsCost = game.bots.reduce((sum, b) => sum + (b.tokenUsage?.costUsd ?? 0), 0);
   const hand = game.hand;
   const pot = hand?.players.reduce((sum, p) => sum + p.totalCommitted, 0) ?? 0;
@@ -1058,7 +1058,7 @@ function GameInfoDialog({
         <div className="mt-3 flex flex-col gap-1 border-t border-line pt-2.5">
           {rosterSeats.map((seat) => {
             const bot = game.bots.find((b) => b.name === seat.name);
-            const model = bot && SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
+            const model = bot && findModelConfig(bot.aiType);
             const player = hand?.players.find((p) => p.name === seat.name);
             const behind = player ? player.startingStack - player.totalCommitted : seat.stack;
             const folded = player?.folded || seat.status === 'eliminated';
@@ -1880,7 +1880,7 @@ function PokerTable({
           {seats.map((seat, i) => {
             const { left, top } = seatPos(i);
             const bot = game.bots.find((b) => b.name === seat.name);
-            const model = bot && SUPPORTED_MODELS.find((m) => m.id === bot.aiType);
+            const model = bot && findModelConfig(bot.aiType);
             const player = game.hand?.players.find((p) => p.name === seat.name);
             const behind = player ? player.startingStack - player.totalCommitted : seat.stack;
             const acting = !game.hand?.complete && game.hand?.toAct === seat.name;

@@ -1,386 +1,135 @@
 /**
- * AI model catalog — availability, API names, capabilities. Pricing lives in config/pricing.ts.
- * Full port of werewolf's ai-models.ts catalog; extend by adding entries, never by editing agents.
+ * Poker's model configuration: the @hiper2d/ai-agents catalog plus app policy.
+ *
+ * The library owns the facts and tuning defaults — model API names, key names, thinking
+ * dialects, reasoning effort, output ceilings, prices. This module overlays what is poker's
+ * business, not the library's: the picker-facing catalog shape the UI renders, env-var
+ * fallbacks for platform keys, deprecated-id migration for persisted game docs, and the
+ * story-generation output profile. Free-tier policy lives in config/tiers.ts.
+ *
+ * Model facts belong upstream: a wrong price, a new model or a provider contract change is
+ * fixed in the library (src/catalog.ts + its agent), released, and the dependency bumped here.
  */
-export type ApiKeyName =
-  | 'ANTHROPIC_API_KEY'
-  | 'OPENAI_API_KEY'
-  | 'GOOGLE_API_KEY'
-  | 'MISTRAL_API_KEY'
-  | 'DEEPSEEK_API_KEY'
-  | 'GROK_API_KEY'
-  | 'MOONSHOT_API_KEY'
-  | 'Z_AI_API_KEY'
-  | 'FUGU_API_KEY'
-  | 'QWEN_API_KEY'
-  | 'MINIMAX_API_KEY';
+import {
+  API_KEY_CONSTANTS,
+  LLM_CONSTANTS,
+  SupportedAiKeyNames,
+  SupportedAiModels,
+  modelIsFast as libModelIsFast,
+  type AbstractAgent,
+  type ApiKeyMap as LibApiKeyMap,
+  type ModelTag,
+} from '@hiper2d/ai-agents';
 
-export type ApiKeyMap = Partial<Record<ApiKeyName, string>>;
+export { LLM_CONSTANTS };
+export type { ModelTag };
+
+/** Key names as the library and the shared config/freeTierApiKeys doc spell them. */
+export type ApiKeyName = (typeof API_KEY_CONSTANTS)[keyof typeof API_KEY_CONSTANTS];
+export type ApiKeyMap = LibApiKeyMap;
 
 /**
  * Dev/local fallback: when a key is missing from the shared config/freeTierApiKeys doc,
  * it is read from these env vars (same naming convention as werewolf's .env).
  */
 export const ENV_KEY_FALLBACKS: Record<ApiKeyName, string> = {
-  ANTHROPIC_API_KEY: 'ANTHROPIC_K',
-  OPENAI_API_KEY: 'OPENAI_K',
-  GOOGLE_API_KEY: 'GOOGLE_K',
-  MISTRAL_API_KEY: 'MISTRAL_K',
-  DEEPSEEK_API_KEY: 'DEEP_SEEK_K',
-  GROK_API_KEY: 'GROK_K',
-  MOONSHOT_API_KEY: 'MOONSHOT_K',
-  Z_AI_API_KEY: 'Z_K',
-  FUGU_API_KEY: 'FUGU_K',
-  QWEN_API_KEY: 'GW_K',
-  MINIMAX_API_KEY: 'MX_K',
+  [API_KEY_CONSTANTS.ANTHROPIC]: 'ANTHROPIC_K',
+  [API_KEY_CONSTANTS.OPENAI]: 'OPENAI_K',
+  [API_KEY_CONSTANTS.GOOGLE]: 'GOOGLE_K',
+  [API_KEY_CONSTANTS.MISTRAL]: 'MISTRAL_K',
+  [API_KEY_CONSTANTS.DEEPSEEK]: 'DEEP_SEEK_K',
+  [API_KEY_CONSTANTS.GROK]: 'GROK_K',
+  [API_KEY_CONSTANTS.MOONSHOT]: 'MOONSHOT_K',
+  [API_KEY_CONSTANTS.Z_AI]: 'Z_K',
+  [API_KEY_CONSTANTS.FUGU]: 'FUGU_K',
+  [API_KEY_CONSTANTS.QWEN]: 'GW_K',
+  [API_KEY_CONSTANTS.MINIMAX]: 'MX_K',
+  [API_KEY_CONSTANTS.META]: 'M_K',
 };
 
-/** Display names for grouping models by provider in pickers. */
-export const PROVIDER_NAMES: Record<ApiKeyName, string> = {
-  ANTHROPIC_API_KEY: 'Anthropic',
-  OPENAI_API_KEY: 'OpenAI',
-  GOOGLE_API_KEY: 'Google',
-  MISTRAL_API_KEY: 'Mistral',
-  DEEPSEEK_API_KEY: 'DeepSeek',
-  GROK_API_KEY: 'Grok',
-  MOONSHOT_API_KEY: 'Moonshot',
-  Z_AI_API_KEY: 'Z.AI',
-  FUGU_API_KEY: 'Sakana Fugu',
-  QWEN_API_KEY: 'Qwen',
-  MINIMAX_API_KEY: 'MiniMax',
-};
+/** Display names for grouping models by provider in pickers ("Anthropic", "Z.AI", …). */
+export const PROVIDER_NAMES: Record<string, string> = SupportedAiKeyNames;
 
-export type AgentKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'minimax' | 'openai-compatible';
-
-/** Speed/cost hints shown in the model picker (werewolf's tag vocabulary). */
-export type ModelTag =
-  | 'very-fast'
-  | 'fast'
-  | 'slow'
-  | 'very-slow'
-  | 'extremely-slow'
-  | 'cheap'
-  | 'expensive';
-
+/** The catalog entry shape the UI renders: the library's ModelConfig keyed by picker id. */
 export interface ModelConfig {
-  /** Stable picker id — game docs reference this, never the raw API model name. */
+  /** Stable catalog id — game docs reference this, never the raw API model name. */
   id: string;
   displayName: string;
-  agentKind: AgentKind;
   modelApiName: string;
-  apiKeyName: ApiKeyName;
-  baseUrl?: string; // for openai-compatible vendors
+  apiKeyName: string;
   hasThinking: boolean;
-  maxOutputTokens: number;
-  /**
-   * How structured output is requested for openai/openai-compatible agents:
-   * json_schema (native structured outputs) or json_object (schema injected into the prompt).
-   */
-  structuredMode?: 'json_schema' | 'json_object';
   tags?: ModelTag[];
 }
 
+/** Every model the library supports, in catalog order. Extend upstream, never here. */
+export const SUPPORTED_MODELS: ModelConfig[] = Object.entries(SupportedAiModels).map(
+  ([id, config]) => ({
+    id,
+    displayName: config.displayName,
+    modelApiName: config.modelApiName,
+    apiKeyName: config.apiKeyName,
+    hasThinking: config.hasThinking,
+    ...(config.tags ? { tags: config.tags } : {}),
+  }),
+);
+
 /**
- * Ids 'claude', 'gpt', 'gemini', 'deepseek', 'qwen', 'fugu' predate the full catalog port
- * and stay as-is (persisted game docs reference them); every other id matches werewolf's.
+ * Model ids that game docs may still hold in Firestore but that are not library catalog ids,
+ * mapped to their current equivalent. Poker's own catalog (pre-library) used short ids for a
+ * few models; games persist a model id per bot and per GM, so those live on in old docs
+ * until `scripts/migrate-model-ids.ts` rewrites them — and even after, for any doc written
+ * before the migration ran.
+ *
+ * Every path that reads a persisted model id goes through `resolveModelId` (directly or via
+ * getModelConfig / findModelConfig), not just agent creation: tier validation re-checks
+ * every bot in a game, so one stale id would otherwise make the model picker unusable for
+ * that whole game.
  */
-export const SUPPORTED_MODELS: ModelConfig[] = [
-  // Anthropic
-  {
-    id: 'claude-fable',
-    displayName: 'Claude Fable 5',
-    agentKind: 'anthropic',
-    modelApiName: 'claude-fable-5',
-    apiKeyName: 'ANTHROPIC_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['expensive'],
-  },
-  {
-    id: 'claude-opus',
-    displayName: 'Claude 5 Opus',
-    agentKind: 'anthropic',
-    modelApiName: 'claude-opus-5',
-    apiKeyName: 'ANTHROPIC_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['expensive'],
-  },
-  {
-    id: 'claude',
-    displayName: 'Claude 5 Sonnet',
-    agentKind: 'anthropic',
-    modelApiName: 'claude-sonnet-5',
-    apiKeyName: 'ANTHROPIC_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['expensive'],
-  },
-  {
-    id: 'claude-haiku',
-    displayName: 'Claude 4.5 Haiku',
-    agentKind: 'anthropic',
-    modelApiName: 'claude-haiku-4-5',
-    apiKeyName: 'ANTHROPIC_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['slow', 'cheap'],
-  },
-  // OpenAI
-  {
-    id: 'gpt-sol',
-    displayName: 'GPT-5.6 Sol',
-    agentKind: 'openai',
-    modelApiName: 'gpt-5.6-sol',
-    apiKeyName: 'OPENAI_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    structuredMode: 'json_schema',
-    tags: ['expensive'],
-  },
-  {
-    id: 'gpt',
-    displayName: 'GPT-5.6 Terra',
-    agentKind: 'openai',
-    modelApiName: 'gpt-5.6-terra',
-    apiKeyName: 'OPENAI_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    structuredMode: 'json_schema',
-    tags: ['fast', 'expensive'],
-  },
-  {
-    id: 'gpt-mini',
-    displayName: 'GPT-5.6 Luna',
-    agentKind: 'openai',
-    modelApiName: 'gpt-5.6-luna',
-    apiKeyName: 'OPENAI_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    structuredMode: 'json_schema',
-    tags: ['fast', 'cheap'],
-  },
-  // Google
-  {
-    id: 'gemini',
-    displayName: 'Gemini 3.1 Pro Preview',
-    agentKind: 'google',
-    modelApiName: 'gemini-3.1-pro-preview',
-    apiKeyName: 'GOOGLE_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['expensive'],
-  },
-  {
-    // Repointed from gemini-3.6-flash 2026-08-13 (stable picker id, matching werewolf).
-    // NOTE if we ever send Gemini thinkingLevel: 3.7 rejects 'minimal' (low|medium|high only).
-    id: 'gemini-flash',
-    displayName: 'Gemini 3.7 Flash',
-    agentKind: 'google',
-    modelApiName: 'gemini-3.7-flash',
-    apiKeyName: 'GOOGLE_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['fast'],
-  },
-  {
-    id: 'gemini-lite',
-    displayName: 'Gemini 3.5 Flash Lite',
-    agentKind: 'google',
-    modelApiName: 'gemini-3.5-flash-lite',
-    apiKeyName: 'GOOGLE_API_KEY',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    tags: ['fast', 'cheap'],
-  },
-  // DeepSeek
-  {
-    id: 'deepseek-flash',
-    displayName: 'DeepSeek V4 Flash',
-    agentKind: 'openai-compatible',
-    modelApiName: 'deepseek-v4-flash',
-    apiKeyName: 'DEEPSEEK_API_KEY',
-    baseUrl: 'https://api.deepseek.com',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['cheap'],
-  },
-  {
-    id: 'deepseek',
-    displayName: 'DeepSeek V4 Pro',
-    agentKind: 'openai-compatible',
-    modelApiName: 'deepseek-v4-pro',
-    apiKeyName: 'DEEPSEEK_API_KEY',
-    baseUrl: 'https://api.deepseek.com',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['cheap'],
-  },
-  // Grok
-  {
-    id: 'grok',
-    displayName: 'Grok 4.6',
-    agentKind: 'openai-compatible',
-    modelApiName: 'grok-4.6',
-    apiKeyName: 'GROK_API_KEY',
-    baseUrl: 'https://api.x.ai/v1',
-    hasThinking: true,
-    maxOutputTokens: 16_384,
-    structuredMode: 'json_schema',
-  },
-  // Mistral — served through the OpenAI-compatible endpoint for now; a dedicated SDK
-  // agent (werewolf has one) can replace agentKind without touching the catalog.
-  {
-    id: 'mistral-large',
-    displayName: 'Mistral Large 3',
-    agentKind: 'openai-compatible',
-    modelApiName: 'mistral-large-latest',
-    apiKeyName: 'MISTRAL_API_KEY',
-    baseUrl: 'https://api.mistral.ai/v1',
-    hasThinking: false,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['fast'],
-  },
-  {
-    id: 'mistral-medium',
-    displayName: 'Mistral Medium 3.5',
-    agentKind: 'openai-compatible',
-    modelApiName: 'mistral-medium-3',
-    apiKeyName: 'MISTRAL_API_KEY',
-    baseUrl: 'https://api.mistral.ai/v1',
-    hasThinking: false,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['very-fast', 'expensive'],
-  },
-  {
-    id: 'mistral-small',
-    displayName: 'Mistral 4 Small',
-    agentKind: 'openai-compatible',
-    modelApiName: 'mistral-small-latest',
-    apiKeyName: 'MISTRAL_API_KEY',
-    baseUrl: 'https://api.mistral.ai/v1',
-    hasThinking: false,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['very-fast', 'cheap'],
-  },
-  {
-    id: 'mistral-magistral',
-    displayName: 'Magistral Medium 1.2',
-    agentKind: 'openai-compatible',
-    modelApiName: 'magistral-medium-latest',
-    apiKeyName: 'MISTRAL_API_KEY',
-    baseUrl: 'https://api.mistral.ai/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['very-fast'],
-  },
-  // Moonshot
-  {
-    id: 'kimi',
-    displayName: 'Kimi K3',
-    agentKind: 'openai-compatible',
-    modelApiName: 'kimi-k3',
-    apiKeyName: 'MOONSHOT_API_KEY',
-    baseUrl: 'https://api.moonshot.ai/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['very-slow', 'expensive'],
-  },
-  // Z.AI
-  {
-    id: 'glm',
-    displayName: 'GLM-5.2',
-    agentKind: 'openai-compatible',
-    modelApiName: 'glm-5.2',
-    apiKeyName: 'Z_AI_API_KEY',
-    baseUrl: 'https://api.z.ai/api/paas/v4/',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['slow'],
-  },
-  // Qwen
-  {
-    id: 'qwen',
-    displayName: 'Qwen3.8 Max',
-    agentKind: 'openai-compatible',
-    modelApiName: 'qwen3.8-max',
-    apiKeyName: 'QWEN_API_KEY',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['very-slow'],
-  },
-  {
-    id: 'qwen-plus',
-    displayName: 'Qwen3.7 Plus',
-    agentKind: 'openai-compatible',
-    modelApiName: 'qwen3.7-plus',
-    apiKeyName: 'QWEN_API_KEY',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['slow', 'cheap'],
-  },
-  {
-    id: 'qwen-flash',
-    displayName: 'Qwen3.7 Flash',
-    agentKind: 'openai-compatible',
-    modelApiName: 'qwen3.7-flash',
-    apiKeyName: 'QWEN_API_KEY',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['slow', 'cheap'],
-  },
-  // MiniMax — dedicated agent: the M-series API has no response_format at all, so the generic
-  // openai-compatible json_object mode breaks; the schema rides in-prompt with lenient parsing.
-  {
-    id: 'minimax',
-    displayName: 'MiniMax M3',
-    agentKind: 'minimax',
-    modelApiName: 'MiniMax-M3',
-    apiKeyName: 'MINIMAX_API_KEY',
-    baseUrl: 'https://api.minimax.io/v1',
-    hasThinking: true,
-    maxOutputTokens: 8_192,
-    tags: ['very-slow', 'cheap'],
-  },
-  // Sakana
-  {
-    id: 'fugu',
-    displayName: 'Sakana Fugu Ultra',
-    agentKind: 'openai-compatible',
-    modelApiName: 'fugu-ultra',
-    apiKeyName: 'FUGU_API_KEY',
-    baseUrl: 'https://api.sakana.ai/v1',
-    hasThinking: false,
-    maxOutputTokens: 8_192,
-    structuredMode: 'json_object',
-    tags: ['extremely-slow', 'expensive'],
-  },
-];
+const DEPRECATED_MODEL_MAP: Record<string, string> = {
+  claude: LLM_CONSTANTS.CLAUDE_SONNET,
+  gemini: LLM_CONSTANTS.GEMINI_PRO,
+  deepseek: LLM_CONSTANTS.DEEPSEEK_PRO,
+  qwen: LLM_CONSTANTS.QWEN_MAX,
+  // Fugu Ultra was dropped upstream in ai-agents 0.19.1 (65-78s turns); Fugu Max is the only
+  // Fugu left. Mistral Medium 3.5 was dropped in 0.21.0; Small is the library's suggested map.
+  fugu: LLM_CONSTANTS.FUGU_MAX,
+  'fugu-ultra': LLM_CONSTANTS.FUGU_MAX,
+  'mistral-medium': LLM_CONSTANTS.MISTRAL_SMALL,
+  // Qwen3.7 Plus was retired upstream 2026-08-30; the Flash entry is the cheap Qwen tier
+  // that replaces it.
+  'qwen-plus': LLM_CONSTANTS.QWEN_FLASH,
+};
 
-export const RANDOM_MODEL_ID = 'random';
+/** Maps a possibly-retired model id to its current catalog id; unknown ids pass through. */
+export function resolveModelId(modelId: string): string {
+  return DEPRECATED_MODEL_MAP[modelId] ?? modelId;
+}
 
-export function getModelConfig(id: string): ModelConfig {
-  const config = SUPPORTED_MODELS.find((m) => m.id === id);
-  if (!config) throw new Error(`Unknown model id: ${id}`);
+/** Catalog entry for a (possibly retired) model id, or undefined when unknown. */
+export function findModelConfig(modelId: string): ModelConfig | undefined {
+  const id = resolveModelId(modelId);
+  return SUPPORTED_MODELS.find((m) => m.id === id);
+}
+
+export function getModelConfig(modelId: string): ModelConfig {
+  const config = findModelConfig(modelId);
+  if (!config) throw new Error(`Unknown model id: ${modelId}`);
   return config;
 }
 
 /** Speed is an ordered scale — "fast" filters must also admit very-fast models. */
-export function modelIsFast(id: string): boolean {
-  const tags = SUPPORTED_MODELS.find((m) => m.id === id)?.tags ?? [];
-  return tags.includes('fast') || tags.includes('very-fast');
+export function modelIsFast(modelId: string): boolean {
+  return libModelIsFast(resolveModelId(modelId));
+}
+
+/**
+ * Story generation emits a whole game setup in one response — the scene plus a character
+ * (name, gender, story, persona) per rival — so it gets more room than a betting turn (the
+ * library default is 8192). Reasoning stays at each model's catalog default.
+ */
+export const STORY_MAX_OUTPUT_TOKENS = 16_384;
+
+/** Applies the story-generation profile to a freshly created GM agent. */
+export function configureStoryAgent(agent: AbstractAgent): void {
+  agent.maxOutputTokens = STORY_MAX_OUTPUT_TOKENS;
 }

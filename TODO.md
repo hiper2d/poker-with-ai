@@ -74,7 +74,9 @@ What follows is ordered roughly by value.
 - [ ] Record FAILED AI calls in `poker_requestStats` (`status: 'error'` + message) —
       today only successes are written, so a failed call leaves no queryable trace
       once its lane error is cleared by a retry.
-- [ ] **Mistral agent** (own SDK; only unported provider — keys already in .env).
+- [x] **Mistral agent** — arrived with the move to `@hiper2d/ai-agents` (2026-09-12), which
+      also brought GPT-6 Astra, GLM-5.3 Flash and Meta Muse Spark. Model facts now live
+      upstream; bump the dependency to pick up catalog changes.
 
 ## 3. Engine correctness
 

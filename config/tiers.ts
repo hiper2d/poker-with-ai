@@ -6,13 +6,15 @@
  *   <= $6  → 1 bot
  *   >  $6  → not available on the free tier
  *
- * Hybrid-thinking models (API offers a thinking toggle, we always run with reasoning on)
- * burn hidden reasoning tokens at the output rate, so their effective output price is
- * multiplied by FREE_TIER_THINKING_COST_FACTOR before banding. Always-on reasoning models
- * (gpt, gemini, grok, kimi, fugu) are banded on sticker price — their overhead hasn't
- * been measured.
+ * Hybrid-thinking models (API offers a thinking toggle, the catalog always runs them with
+ * reasoning on — the library's isHybridThinkingModel) burn hidden reasoning tokens at the
+ * output rate, so their effective output price is multiplied by FREE_TIER_THINKING_COST_FACTOR
+ * before banding. Always-on reasoning models (GPT, Gemini, Grok, Kimi, Fugu, Magistral,
+ * Muse Spark) are banded on sticker price — their overhead hasn't been measured.
  */
-import { MODEL_PRICING } from './pricing';
+import { isHybridThinkingModel as libIsHybridThinkingModel } from '@hiper2d/ai-agents';
+import { findModelConfig, resolveModelId } from './models';
+import { getModelPricing } from './pricing';
 
 /** Hard free-tier caps beyond the per-model bands (werewolf's FREE_TIER_LIMITS). */
 export const FREE_TIER_LIMITS = {
@@ -25,24 +27,10 @@ export const FREE_TIER_OUTPUT_PRICE_BANDS = {
 } as const;
 export const FREE_TIER_THINKING_COST_FACTOR = 2.5;
 
-/** Picker ids of hybrid-thinking models (pay the reasoning multiplier when banding).
- *  Matches werewolf's set; claude-fable and the always-on reasoners stay off it. */
-const HYBRID_THINKING_IDS = new Set([
-  'claude-opus',
-  'claude',
-  'claude-haiku',
-  'deepseek-flash',
-  'deepseek',
-  'glm',
-  'qwen',
-  'qwen-plus',
-  'qwen-flash',
-  'minimax',
-]);
-
 /** Whether the ×FREE_TIER_THINKING_COST_FACTOR reasoning multiplier applies when banding. */
 export function isHybridThinkingModel(modelId: string): boolean {
-  return HYBRID_THINKING_IDS.has(modelId);
+  const config = findModelConfig(modelId);
+  return config !== undefined && libIsHybridThinkingModel(config.modelApiName);
 }
 
 export interface FreeTierPolicy {
@@ -60,14 +48,14 @@ const FREE_TIER_OVERRIDES: Record<string, FreeTierPolicy> = {
 };
 
 export function getFreeTierPolicy(modelId: string): FreeTierPolicy {
-  const override = FREE_TIER_OVERRIDES[modelId];
+  const override = FREE_TIER_OVERRIDES[resolveModelId(modelId)];
   if (override) return override;
-  const pricing = MODEL_PRICING[modelId];
+  const pricing = getModelPricing(modelId);
   if (!pricing) return { available: false, maxBotsPerGame: 0 };
 
-  const effectiveOutput = HYBRID_THINKING_IDS.has(modelId)
-    ? pricing.outputPerMTok * FREE_TIER_THINKING_COST_FACTOR
-    : pricing.outputPerMTok;
+  const effectiveOutput = isHybridThinkingModel(modelId)
+    ? pricing.outputPrice * FREE_TIER_THINKING_COST_FACTOR
+    : pricing.outputPrice;
 
   if (effectiveOutput <= FREE_TIER_OUTPUT_PRICE_BANDS.UNLIMITED_MAX)
     return { available: true, maxBotsPerGame: -1 };

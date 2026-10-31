@@ -49,9 +49,9 @@ export async function routeChat(
   const lane: Lane = cause.kind === 'reaction' ? 'game' : 'chat';
   const model = effectiveModel(game, PIT_BOSS, game.gameMasterAiType, lane);
 
-  const reply = await aiCall(PIT_BOSS, model, () => {
-    const agent = createAgent(PIT_BOSS, buildPitBossSystemPrompt(game, activity), model, apiKeys);
-    return agent.askWithSchema(ChatRoutingSchema, [
+  const [routing, , usage] = await aiCall(PIT_BOSS, model, () => {
+    const agent = createAgent(PIT_BOSS, buildPitBossSystemPrompt(game, activity), model, apiKeys, { gameId: game.id });
+    return agent.askWithZodSchema(ChatRoutingSchema, [
       {
         role: 'user',
         content:
@@ -60,13 +60,13 @@ export async function routeChat(
       },
     ]);
   });
-  await recordGmUsage(game, model, reply);
+  await recordGmUsage(game, model, usage);
 
   // A schema-valid but semantically wrong answer (hallucinated or dead name, the human,
   // too many) is repaired here rather than failed — the call itself worked.
-  const { speakers, dropped } = clampSpeakers(reply.content.speakers ?? [], candidates, { min, max });
+  const { speakers, dropped } = clampSpeakers(routing.speakers ?? [], candidates, { min, max });
   if (dropped.length) {
     logger.warn('pit boss picked invalid speakers', { gameId: game.id, dropped });
   }
-  return { speakers, reasoning: reply.content.reasoning ?? '' };
+  return { speakers, reasoning: routing.reasoning ?? '' };
 }
