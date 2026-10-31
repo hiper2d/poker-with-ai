@@ -82,7 +82,6 @@ const game: Game = {
   gameMasterTokenUsage: { inputTokens: 23456, outputTokens: 3456, costUsd: 0.0789 },
   totalGameCost: 0.31,
   createdAt: 0,
-  expireAt: 0,
 };
 
 const messages: GameMessage[] = [

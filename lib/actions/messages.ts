@@ -1,5 +1,6 @@
 import { COLLECTIONS, db, stripUndefined } from '@/lib/firebase/server';
 import type { GameMessage } from '@/models/game';
+import { expiryDate, withoutExpiry } from '@/lib/game/ttl';
 
 /**
  * Persist a message with the werewolf-style ordered custom id
@@ -16,7 +17,12 @@ export async function addMessageToGame(
     const counter = ((snapshot.data()?.messageCounter as number) ?? 0) + 1;
     const id = `${String(counter).padStart(6, '0')}-${sanitize(message.authorName)}-to-${sanitize(message.recipientName)}`;
     tx.update(gameRef, { messageCounter: counter });
-    tx.set(gameRef.collection('messages').doc(id), stripUndefined({ ...message, id, timestamp: Date.now() }));
+    // The game's own expiry, so the messages TTL policy deletes them with the game.
+    const expireAt = expiryDate(snapshot.data()?.expireAt);
+    tx.set(gameRef.collection('messages').doc(id), {
+      ...stripUndefined({ ...message, id, timestamp: Date.now() }),
+      ...(expireAt ? { expireAt } : {}),
+    });
     return id;
   });
 }
@@ -33,5 +39,5 @@ export async function fetchMessages(gameId: string): Promise<GameMessage[]> {
     .collection('messages')
     .orderBy('__name__')
     .get();
-  return snapshot.docs.map((d) => d.data() as GameMessage);
+  return snapshot.docs.map((d) => withoutExpiry(d.data() as GameMessage));
 }

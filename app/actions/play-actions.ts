@@ -907,8 +907,10 @@ async function saveGame(game: Game): Promise<void> {
     chatError: _chatError,
     gameRetry: _gameRetry,
     chatRetry: _chatRetry,
+    // Storage-only TTL Timestamp (lib/game/ttl.ts): the JSON round-trip below would flatten it.
+    expireAt: _expireAt,
     ...owned
-  } = game;
+  } = game as Game & { expireAt?: unknown };
   await db
     .collection(COLLECTIONS.games)
     .doc(game.id)

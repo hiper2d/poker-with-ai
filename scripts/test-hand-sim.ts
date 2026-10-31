@@ -49,7 +49,6 @@ const game: Game = {
   handHistory: [],
   gameMasterAiType: 'claude',
   createdAt: 0,
-  expireAt: 0,
 };
 
 async function main() {

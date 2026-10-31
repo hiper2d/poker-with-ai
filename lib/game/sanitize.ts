@@ -1,13 +1,15 @@
+import { withoutExpiry } from '@/lib/game/ttl';
 import type { Game } from '@/models/game';
 
 /**
  * Client-safe copy of the game doc: no deck, no other players' hole cards, no bot
  * memory (summaries hold each bot's private reads — including reads on the human).
  * Shown-down cards reach the client through HAND_RESULT messages / handHistory instead.
+ * The storage-only `expireAt` Timestamp is dropped too (lib/game/ttl.ts).
  */
 export function sanitizeGame(game: Game): Game {
   const safe: Game = {
-    ...game,
+    ...withoutExpiry(game),
     bots: game.bots.map((b) => ({ ...b, summaries: [] })),
   };
   if (!game.hand) return safe;

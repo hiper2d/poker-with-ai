@@ -47,7 +47,6 @@ export function gameWith(over: Partial<Game>): Game {
     handHistory: [],
     gameMasterAiType: 'claude',
     createdAt: 0,
-    expireAt: 0,
     ...over,
   } as Game;
 }

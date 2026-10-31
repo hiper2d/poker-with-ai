@@ -12,6 +12,7 @@ import { addMessageToGame } from '@/lib/actions/messages';
 import { shuffle } from '@/lib/engine/deck';
 import { COLLECTIONS, db, stripUndefined } from '@/lib/firebase/server';
 import { sanitizeGame } from '@/lib/game/sanitize';
+import { gameExpiry, withoutExpiry } from '@/lib/game/ttl';
 import type { Bot, Game, GameMessage, Seat } from '@/models/game';
 import { GAME_STATES, RECIPIENT_ALL } from '@/models/game';
 import type { GamePreview, GamePreviewInput } from '@/models/preview';
@@ -170,10 +171,10 @@ export async function createGame(input: GamePreviewInput, preview: GamePreview):
     gameRetry: null,
     chatRetry: null,
     createdAt: now,
-    expireAt: now + GAME_CONFIG.gameTtlDays * 24 * 60 * 60 * 1000,
   };
 
-  await db.collection(COLLECTIONS.games).doc(id).set(stripUndefined(game));
+  // expireAt joins after the JSON round-trip, which would turn the Date into a string.
+  await db.collection(COLLECTIONS.games).doc(id).set({ ...stripUndefined(game), expireAt: gameExpiry(now) });
   await addMessageToGame(id, {
     recipientName: RECIPIENT_ALL,
     authorName: 'GM',
@@ -201,7 +202,7 @@ export async function listGames(): Promise<Game[]> {
     .where('createdBy', '==', email)
     .get();
   return snapshot.docs
-    .map((d) => d.data() as Game)
+    .map((d) => sanitizeGame(d.data() as Game))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
@@ -222,7 +223,7 @@ export async function getGameMessages(gameId: string): Promise<GameMessage[]> {
     .collection('messages')
     .orderBy('__name__')
     .get();
-  return snapshot.docs.map((d) => d.data() as GameMessage);
+  return snapshot.docs.map((d) => withoutExpiry(d.data() as GameMessage));
 }
 
 function validateInput(input: GamePreviewInput): void {

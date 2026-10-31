@@ -210,5 +210,6 @@ export interface Game {
   gameRetry?: RetryPlan | null;
   chatRetry?: RetryPlan | null;
   createdAt: number;
-  expireAt: number; // sliding TTL
+  // No `expireAt` here on purpose: it is a storage-only Firestore Timestamp (lib/game/ttl.ts),
+  // written at creation, never saved back by the pump and never sent to the client.
 }

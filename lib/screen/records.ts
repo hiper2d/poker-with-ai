@@ -64,7 +64,8 @@ export async function saveScreenCall(record: ScreenCallRecord): Promise<void> {
   const now = Date.now();
   try {
     await db.collection(COLLECTIONS.screenCalls).add(
-      stripUndefined({ ...record, createdAt: now, expireAt: new Date(now + RECORD_TTL_MS) }),
+      // expireAt after the JSON round-trip, which would turn the Date into a string the TTL ignores.
+      { ...stripUndefined(record), createdAt: now, expireAt: new Date(now + RECORD_TTL_MS) },
     );
   } catch (error) {
     logger.warn('screen record not saved', { gameId: record.gameId, source: record.source, error: String(error) });
