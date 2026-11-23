@@ -95,6 +95,10 @@ const DEPRECATED_MODEL_MAP: Record<string, string> = {
   fugu: LLM_CONSTANTS.FUGU_MAX,
   'fugu-ultra': LLM_CONSTANTS.FUGU_MAX,
   'mistral-medium': LLM_CONSTANTS.MISTRAL_SMALL,
+  // Magistral was dropped in 0.6.0 and never mapped here, so bots still seated on it could not
+  // take a turn. Small, not Large: it has no per-game cap on the free tier, and old tables
+  // seat more than one Magistral bot.
+  'mistral-magistral': LLM_CONSTANTS.MISTRAL_SMALL,
   // Qwen3.7 Plus was retired upstream 2026-08-30; the Flash entry is the cheap Qwen tier
   // that replaces it.
   'qwen-plus': LLM_CONSTANTS.QWEN_FLASH,

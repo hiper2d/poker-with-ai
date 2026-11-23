@@ -23,8 +23,8 @@ describe('free-tier price banding', () => {
     expect(getFreeTierPolicy('deepseek-pro')).toEqual({ available: true, maxBotsPerGame: 1 });
     // grok: $6 sticker, always-on reasoning (no factor) → single-bot band
     expect(getFreeTierPolicy('grok')).toEqual({ available: true, maxBotsPerGame: 1 });
-    // gemini-flash: $3.75 launch-price sticker, always-on reasoning → single-bot band
-    expect(getFreeTierPolicy('gemini-flash')).toEqual({ available: true, maxBotsPerGame: 1 });
+    // gemini-flash: $7.50 since the slot moved to Gemini 4 Hydrogen (ai-agents 0.35.0) → not available
+    expect(getFreeTierPolicy('gemini-flash')).toEqual({ available: false, maxBotsPerGame: 0 });
     // gpt: $5 (GPT-6.1 Terra) → single-bot band
     expect(getFreeTierPolicy('gpt')).toEqual({ available: true, maxBotsPerGame: 1 });
     // claude-sonnet: $10 × 2.5 = $25 → not available

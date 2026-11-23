@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hiper2d/ai-agents": "0.31.0",
+    "@hiper2d/ai-agents": "0.41.0",
     "@logtail/node": "^0.5.8",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
