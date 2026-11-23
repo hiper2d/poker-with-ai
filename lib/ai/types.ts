@@ -7,9 +7,9 @@ import { z } from 'zod';
 /** The structured output of a bot's betting turn — the heart of the game loop. */
 export const BettingDecisionSchema = z.object({
   action: z.enum(['fold', 'check', 'call', 'bet', 'raise']),
-  amount: z.number().int().nonnegative().optional().describe('For bet/raise: total amount to raise TO'),
+  amount: z.number().int().nonnegative().nullable().optional().describe('For bet/raise: total amount to raise TO, otherwise null'),
   reasoning: z.string().describe('Private reasoning, never shown to other players'),
-  tableTalk: z.string().optional().describe('Optional in-character comment said aloud at the table'),
+  tableTalk: z.string().nullable().optional().describe('Optional in-character comment said aloud at the table, or null'),
 });
 
 export type BettingDecision = z.infer<typeof BettingDecisionSchema>;
